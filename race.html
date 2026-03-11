@@ -575,7 +575,13 @@ addEventListener('keyup', e => keys[e.code] = false);
 const pico = { jx:0, jy:0, a:0, prevB:0, connected:false };
 function connectPico(){
   const host = location.hostname || 'localhost';
-  const ws = new WebSocket('ws://'+host+':8765');
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  let ws;
+  try { ws = new WebSocket(proto+host+':8765'); } catch(e){
+    document.getElementById('picoStatus').className = 'pico-off';
+    document.getElementById('picoStatus').textContent = 'Pico W: 僅限本機連線';
+    return;
+  }
   ws.onopen = () => {
     pico.connected = true;
     document.getElementById('picoStatus').className = 'pico-on';
