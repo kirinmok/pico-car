@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>差速轉彎車 — 模擬練習</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#0b0f14;overflow:hidden;font-family:system-ui,sans-serif;color:#c8e8f8;}
+canvas#game{display:block;margin:0 auto;}
+
+#homeBtn{position:fixed;top:16px;left:16px;background:rgba(0,0,0,.7);color:#f5c842;
+  border:1px solid #f5c84266;padding:8px 16px;border-radius:10px;font-size:13px;
+  font-weight:700;cursor:pointer;z-index:25;text-decoration:none;letter-spacing:1px;}
+#homeBtn:hover{background:rgba(245,200,66,.2);}
+
+#hud{position:fixed;top:16px;right:16px;background:rgba(0,0,0,.75);
+  padding:12px 18px;border-radius:12px;border:1px solid #333;font-size:13px;line-height:2;}
+#hud b{color:#f5c842;}
+
+#controls{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,.8);padding:14px 24px;border-radius:12px;border:1px solid #333;
+  font-size:14px;color:#999;text-align:center;line-height:2.2;}
+#controls kbd{background:#222;color:#ccc;padding:2px 8px;border-radius:4px;
+  border:1px solid #444;font-size:13px;}
+
+#motorViz{position:fixed;bottom:16px;right:16px;background:rgba(0,0,0,.8);
+  padding:14px 18px;border-radius:12px;border:1px solid #333;font-size:13px;width:160px;}
+.motor-bar{height:14px;border-radius:7px;margin:4px 0 10px;background:#222;position:relative;overflow:hidden;}
+.motor-fill{height:100%;border-radius:7px;transition:width 0.1s;position:absolute;top:0;}
+.motor-label{color:#888;font-size:11px;}
+
+#picoStatus{position:fixed;bottom:16px;left:16px;padding:6px 14px;
+  border-radius:20px;font-size:12px;border:1px solid #333;background:rgba(0,0,0,.7);}
+.pico-on{color:#00B060;border-color:#00B06044!important;}
+.pico-off{color:#E03030;border-color:#E0303044!important;}
+
+#tutorial{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:rgba(0,0,0,.92);padding:32px 40px;border-radius:16px;border:2px solid #f5c842;
+  text-align:center;z-index:50;max-width:420px;}
+#tutorial h2{color:#f5c842;margin-bottom:16px;font-size:20px;}
+#tutorial p{color:#aab;font-size:13px;line-height:1.8;margin-bottom:12px;}
+#tutorial .start-btn{background:#f5c842;color:#000;border:none;padding:10px 32px;
+  border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px;}
+#tutorial .start-btn:hover{background:#ffd866;}
+</style>
+</head>
+<body>
+<a id="homeBtn" href="index.html">← 首頁</a>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div>金幣 <b id="coins">0</b></div>
+  <div>時間 <b id="timer">00:00</b></div>
+  <div>動作 <b id="action">停車</b></div>
+</div>
+
+<div id="controls">
+  <span style="color:#FFD700">●</span> 前進 <kbd>W</kbd>
+  <span style="color:#E03030">●</span> 後退 <kbd>S</kbd>
+  <span style="color:#4488FF">●</span> 左轉 <kbd>A</kbd>
+  <span style="color:#00CC44">●</span> 右轉 <kbd>D</kbd>
+  <span style="color:#FFF">●</span> 原地旋轉 <kbd>Q</kbd>
+  <span style="color:#666">●</span> 停車 <kbd>Space</kbd>
+</div>
+
+<div id="motorViz">
+  <div class="motor-label">左輪</div>
+  <div class="motor-bar"><div class="motor-fill" id="leftBar" style="width:50%;left:50%;background:#4488FF;"></div></div>
+  <div class="motor-label">右輪</div>
+  <div class="motor-bar"><div class="motor-fill" id="rightBar" style="width:50%;left:50%;background:#00CC44;"></div></div>
+</div>
+
+<div id="picoStatus" class="pico-off">🔌 Pico W: 偵測中...</div>
+
+<div id="tutorial">
+  <h2>差速轉彎車</h2>
+  <p>
+    這台車有<b style="color:#4488FF">左輪</b>和<b style="color:#00CC44">右輪</b>兩顆馬達。<br>
+    左右輪速度不同 → 車子就會轉彎！<br><br>
+    <b>左轉</b>：右輪轉、左輪停<br>
+    <b>右轉</b>：左輪轉、右輪停<br>
+    <b>原地旋轉</b>：左右輪反方向轉
+  </p>
+  <p style="color:#f5c842;">收集場地上的金幣來練習操控！</p>
+  <button class="start-btn" id="startBtn">開始練習</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// CANVAS SETUP
+// ═══════════════════════════════════════════════
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize(){
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
+}
+resize();
+addEventListener('resize', resize);
+
+// ═══════════════════════════════════════════════
+// DIFFERENTIAL STEERING CAR
+// ═══════════════════════════════════════════════
+const car = {
+  x: 0, y: 0, angle: 0,
+  leftSpeed: 0, rightSpeed: 0,  // -1 ~ 1
+  width: 40, height: 56,
+  wheelBase: 40  // 兩輪間距
+};
+
+// ═══════════════════════════════════════════════
+// ARENA & COINS
+// ═══════════════════════════════════════════════
+const ARENA_W = 1600, ARENA_H = 1200;
+const coins = [];
+let coinCount = 0;
+let gameTime = 0;
+let gameStarted = false;
+
+function spawnCoins(n){
+  coins.length = 0;
+  for(let i = 0; i < n; i++){
+    coins.push({
+      x: (Math.random() - 0.5) * (ARENA_W - 100),
+      y: (Math.random() - 0.5) * (ARENA_H - 100),
+      r: 12, collected: false, bobPhase: Math.random() * Math.PI * 2
+    });
+  }
+}
+spawnCoins(20);
+
+// ═══════════════════════════════════════════════
+// OBSTACLES
+// ═══════════════════════════════════════════════
+const obstacles = [];
+function spawnObstacles(){
+  obstacles.length = 0;
+  for(let i = 0; i < 8; i++){
+    let ox, oy;
+    do {
+      ox = (Math.random() - 0.5) * (ARENA_W - 200);
+      oy = (Math.random() - 0.5) * (ARENA_H - 200);
+    } while(Math.abs(ox) < 80 && Math.abs(oy) < 80); // 不擋出生點
+    obstacles.push({
+      x: ox, y: oy,
+      w: 40 + Math.random() * 60,
+      h: 40 + Math.random() * 60
+    });
+  }
+}
+spawnObstacles();
+
+// ═══════════════════════════════════════════════
+// INPUT
+// ═══════════════════════════════════════════════
+const keys = {};
+addEventListener('keydown', e => { keys[e.code] = true; e.preventDefault(); });
+addEventListener('keyup',   e => { keys[e.code] = false; });
+
+// Pico W WebSocket
+const pico = { connected: false, left: 0, right: 0, action: 'stop' };
+function connectPico(){
+  const host = location.hostname || 'localhost';
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  let ws;
+  try { ws = new WebSocket(proto + host + ':8765'); } catch(e){
+    document.getElementById('picoStatus').className = 'pico-off';
+    document.getElementById('picoStatus').textContent = '🔌 Pico W: 僅限本機';
+    return;
+  }
+  ws.onopen = () => {
+    pico.connected = true;
+    const el = document.getElementById('picoStatus');
+    el.className = 'pico-on';
+    el.textContent = '🎮 Pico W: 已連線';
+  };
+  ws.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      // 支援兩種格式：diff_car.py {left, right, action} 或 rc_car.py {jx, jy, a, b}
+      if(d.left !== undefined){
+        pico.left = d.left || 0;
+        pico.right = d.right || 0;
+        pico.action = d.action || 'stop';
+      } else {
+        // 相容 rc_car.py：jy=前後 jx=左右 → 轉換成差速
+        const jy = d.jy || 0, jx = d.jx || 0;
+        pico.left  = Math.max(-1, Math.min(1, jy + jx));
+        pico.right = Math.max(-1, Math.min(1, jy - jx));
+        pico.action = jy > 0 ? 'fwd' : jy < 0 ? 'back' : jx !== 0 ? (jx < 0 ? 'left' : 'right') : 'stop';
+      }
+      // boost+brake combo = 回首頁
+      if((d.a||0) && (d.b||0)) location.href = 'index.html';
+    } catch(err){}
+  };
+  ws.onclose = () => {
+    pico.connected = false;
+    const el = document.getElementById('picoStatus');
+    el.className = 'pico-off';
+    el.textContent = '🔌 Pico W: 已斷線';
+    setTimeout(connectPico, 2000);
+  };
+  ws.onerror = () => { try { ws.close(); } catch(e){} };
+}
+connectPico();
+
+// ═══════════════════════════════════════════════
+// PHYSICS — 差速轉彎模型
+// ═══════════════════════════════════════════════
+const MOTOR_POWER = 200;  // 最大速度 px/s
+
+function getInput(){
+  let leftPower = 0, rightPower = 0;
+  let action = 'stop';
+
+  // 鍵盤輸入
+  if(keys['Space']){
+    action = 'stop';
+  } else if(keys['KeyW'] || keys['ArrowUp']){
+    leftPower = 1; rightPower = 1; action = 'fwd';
+  } else if(keys['KeyS'] || keys['ArrowDown']){
+    leftPower = -1; rightPower = -1; action = 'back';
+  } else if(keys['KeyA'] || keys['ArrowLeft']){
+    leftPower = 0; rightPower = 1; action = 'left';
+  } else if(keys['KeyD'] || keys['ArrowRight']){
+    leftPower = 1; rightPower = 0; action = 'right';
+  } else if(keys['KeyQ']){
+    leftPower = -1; rightPower = 1; action = 'spin';
+  }
+
+  // Pico W 覆蓋（有連線時）
+  if(pico.connected && pico.action !== 'stop'){
+    leftPower = pico.left;
+    rightPower = pico.right;
+    action = pico.action;
+  }
+
+  return { leftPower, rightPower, action };
+}
+
+function updateCar(dt){
+  const input = getInput();
+  car.leftSpeed = input.leftPower;
+  car.rightSpeed = input.rightPower;
+
+  const vL = input.leftPower * MOTOR_POWER;
+  const vR = input.rightPower * MOTOR_POWER;
+
+  // 差速轉彎物理：
+  // v = (vL + vR) / 2        → 線速度
+  // omega = (vR - vL) / wheelBase → 角速度
+  const v = (vL + vR) / 2;
+  const omega = (vR - vL) / car.wheelBase;
+
+  car.angle += omega * dt;
+  car.x += Math.sin(car.angle) * v * dt;
+  car.y -= Math.cos(car.angle) * v * dt;
+
+  // 場地邊界
+  const hw = ARENA_W / 2, hh = ARENA_H / 2;
+  if(car.x < -hw) car.x = -hw;
+  if(car.x >  hw) car.x =  hw;
+  if(car.y < -hh) car.y = -hh;
+  if(car.y >  hh) car.y =  hh;
+
+  // 障礙物碰撞（簡單 AABB）
+  for(const ob of obstacles){
+    const dx = car.x - ob.x, dy = car.y - ob.y;
+    const overlapX = (car.width/2 + ob.w/2) - Math.abs(dx);
+    const overlapY = (car.height/2 + ob.h/2) - Math.abs(dy);
+    if(overlapX > 0 && overlapY > 0){
+      if(overlapX < overlapY){
+        car.x += dx > 0 ? overlapX : -overlapX;
+      } else {
+        car.y += dy > 0 ? overlapY : -overlapY;
+      }
+    }
+  }
+
+  // 金幣收集
+  for(const c of coins){
+    if(c.collected) continue;
+    const dx = car.x - c.x, dy = car.y - c.y;
+    if(dx*dx + dy*dy < (car.width/2 + c.r) * (car.width/2 + c.r)){
+      c.collected = true;
+      coinCount++;
+      document.getElementById('coins').textContent = coinCount;
+    }
+  }
+
+  // 全收集 → 重新生成
+  if(coins.every(c => c.collected)){
+    spawnCoins(20);
+    spawnObstacles();
+  }
+
+  // HUD
+  const actionNames = { stop:'停車', fwd:'前進', back:'後退', left:'左轉', right:'右轉', spin:'旋轉' };
+  document.getElementById('action').textContent = actionNames[input.action] || '停車';
+
+  // 馬達視覺化
+  updateMotorBars(input.leftPower, input.rightPower);
+}
+
+function updateMotorBars(l, r){
+  const leftBar = document.getElementById('leftBar');
+  const rightBar = document.getElementById('rightBar');
+
+  // 左輪：正值綠色往右延伸，負值紅色往左
+  const lPct = Math.abs(l) * 50;
+  leftBar.style.width = lPct + '%';
+  leftBar.style.left = l >= 0 ? '50%' : (50 - lPct) + '%';
+  leftBar.style.background = l >= 0 ? '#4488FF' : '#E03030';
+
+  const rPct = Math.abs(r) * 50;
+  rightBar.style.width = rPct + '%';
+  rightBar.style.left = r >= 0 ? '50%' : (50 - rPct) + '%';
+  rightBar.style.background = r >= 0 ? '#00CC44' : '#E03030';
+}
+
+// ═══════════════════════════════════════════════
+// RENDERING
+// ═══════════════════════════════════════════════
+let camX = 0, camY = 0;
+
+function draw(t){
+  ctx.clearRect(0, 0, W, H);
+
+  // 相機跟隨
+  camX += (car.x - camX) * 0.08;
+  camY += (car.y - camY) * 0.08;
+
+  ctx.save();
+  ctx.translate(W/2 - camX, H/2 - camY);
+
+  // 場地背景
+  const hw = ARENA_W/2, hh = ARENA_H/2;
+  ctx.fillStyle = '#0a1018';
+  ctx.fillRect(-hw - 20, -hh - 20, ARENA_W + 40, ARENA_H + 40);
+
+  // 格線
+  ctx.strokeStyle = '#151e28';
+  ctx.lineWidth = 1;
+  for(let x = -hw; x <= hw; x += 80){
+    ctx.beginPath(); ctx.moveTo(x, -hh); ctx.lineTo(x, hh); ctx.stroke();
+  }
+  for(let y = -hh; y <= hh; y += 80){
+    ctx.beginPath(); ctx.moveTo(-hw, y); ctx.lineTo(hw, y); ctx.stroke();
+  }
+
+  // 場地邊框
+  ctx.strokeStyle = '#f5c84244';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(-hw, -hh, ARENA_W, ARENA_H);
+
+  // 障礙物
+  for(const ob of obstacles){
+    ctx.fillStyle = '#2a1a1a';
+    ctx.strokeStyle = '#E03030';
+    ctx.lineWidth = 2;
+    ctx.fillRect(ob.x - ob.w/2, ob.y - ob.h/2, ob.w, ob.h);
+    ctx.strokeRect(ob.x - ob.w/2, ob.y - ob.h/2, ob.w, ob.h);
+    // 叉叉
+    ctx.strokeStyle = '#E0303066';
+    ctx.beginPath();
+    ctx.moveTo(ob.x - ob.w/3, ob.y - ob.h/3);
+    ctx.lineTo(ob.x + ob.w/3, ob.y + ob.h/3);
+    ctx.moveTo(ob.x + ob.w/3, ob.y - ob.h/3);
+    ctx.lineTo(ob.x - ob.w/3, ob.y + ob.h/3);
+    ctx.stroke();
+  }
+
+  // 金幣
+  const now = t / 1000;
+  for(const c of coins){
+    if(c.collected) continue;
+    const bob = Math.sin(now * 3 + c.bobPhase) * 3;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y + bob, c.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFD700';
+    ctx.fill();
+    ctx.strokeStyle = '#B8860B';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // $ 符號
+    ctx.fillStyle = '#8B6914';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('$', c.x, c.y + bob);
+  }
+
+  // 車子
+  ctx.save();
+  ctx.translate(car.x, car.y);
+  ctx.rotate(car.angle);
+
+  // 車身
+  ctx.fillStyle = '#1a3050';
+  ctx.strokeStyle = '#4488FF';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-car.width/2, -car.height/2, car.width, car.height, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // 左輪
+  const wheelW = 8, wheelH = 16;
+  const lColor = car.leftSpeed > 0 ? '#00CC44' : car.leftSpeed < 0 ? '#E03030' : '#444';
+  ctx.fillStyle = lColor;
+  ctx.fillRect(-car.width/2 - wheelW/2 - 2, -wheelH/2, wheelW, wheelH);
+  // 左輪轉速箭頭
+  if(car.leftSpeed !== 0){
+    ctx.fillStyle = '#FFF';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(car.leftSpeed > 0 ? '▲' : '▼', -car.width/2 - 2, 2);
+  }
+
+  // 右輪
+  const rColor = car.rightSpeed > 0 ? '#00CC44' : car.rightSpeed < 0 ? '#E03030' : '#444';
+  ctx.fillStyle = rColor;
+  ctx.fillRect(car.width/2 - wheelW/2 + 2, -wheelH/2, wheelW, wheelH);
+  if(car.rightSpeed !== 0){
+    ctx.fillStyle = '#FFF';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(car.rightSpeed > 0 ? '▲' : '▼', car.width/2 + 2, 2);
+  }
+
+  // 車頭標記
+  ctx.fillStyle = '#f5c842';
+  ctx.beginPath();
+  ctx.moveTo(-8, -car.height/2 + 2);
+  ctx.lineTo(8, -car.height/2 + 2);
+  ctx.lineTo(0, -car.height/2 - 6);
+  ctx.fill();
+
+  // L / R 標示
+  ctx.fillStyle = '#4488FF88';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('L', -12, 4);
+  ctx.fillStyle = '#00CC4488';
+  ctx.fillText('R', 12, 4);
+
+  ctx.restore();
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════
+// GAME LOOP
+// ═══════════════════════════════════════════════
+let lastTime = 0;
+
+function gameLoop(t){
+  const dt = Math.min((t - lastTime) / 1000, 0.05);
+  lastTime = t;
+
+  if(gameStarted){
+    gameTime += dt;
+    updateCar(dt);
+
+    // 計時器
+    const mins = Math.floor(gameTime / 60);
+    const secs = Math.floor(gameTime % 60);
+    document.getElementById('timer').textContent =
+      String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+  }
+
+  draw(t);
+  requestAnimationFrame(gameLoop);
+}
+
+// ═══════════════════════════════════════════════
+// START
+// ═══════════════════════════════════════════════
+document.getElementById('startBtn').addEventListener('click', () => {
+  document.getElementById('tutorial').style.display = 'none';
+  gameStarted = true;
+});
+
+// 鍵盤也能開始
+addEventListener('keydown', e => {
+  if(!gameStarted && (e.code === 'Enter' || e.code === 'Space')){
+    document.getElementById('tutorial').style.display = 'none';
+    gameStarted = true;
+  }
+});
+
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
