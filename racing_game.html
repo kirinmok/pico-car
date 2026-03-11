@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>DAYE Racing — 模擬賽車</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#111;overflow:hidden;font-family:'Segoe UI',sans-serif;}
+canvas#game{display:block;width:100vw;height:100vh;}
+
+/* HUD */
+#hud{position:fixed;top:0;left:0;right:0;pointer-events:none;z-index:10;}
+#speedBox{position:fixed;right:30px;bottom:30px;width:160px;height:160px;
+  background:rgba(0,0,0,.7);border:2px solid #333;border-radius:50%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;}
+#speedNum{font-size:48px;font-weight:900;color:#0f0;font-family:'Courier New',monospace;}
+#speedUnit{font-size:12px;color:#888;letter-spacing:2px;}
+#lapBox{position:fixed;top:20px;right:30px;background:rgba(0,0,0,.75);
+  padding:10px 20px;border-radius:10px;border:1px solid #333;}
+#lapBox div{color:#ccc;font-size:13px;line-height:1.8;}
+#lapBox b{color:#fff;font-size:16px;}
+#lapBox .best{color:#ffb700;}
+#viewLabel{position:fixed;top:20px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,.7);color:#0f0;padding:6px 18px;border-radius:20px;
+  font-size:12px;letter-spacing:2px;border:1px solid #0f04;}
+#controls{position:fixed;bottom:20px;left:20px;background:rgba(0,0,0,.7);
+  padding:12px 18px;border-radius:10px;font-size:16px;color:#999;line-height:2;border:1px solid #333;}
+#controls kbd{background:#222;color:#ccc;padding:2px 8px;border-radius:4px;border:1px solid #444;font-size:15px;}
+#joyStatus{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  padding:6px 16px;border-radius:20px;font-size:13px;border:1px solid #333;}
+#minimap{position:fixed;left:20px;bottom:200px;border:2px solid #333;border-radius:8px;
+  background:rgba(0,0,0,.75);}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<canvas id="minimap" width="180" height="180"></canvas>
+
+<div id="hud">
+  <div id="viewLabel">CHASE CAM — [V] 切換視角</div>
+  <div id="lapBox">
+    <div>圈數 <b id="lapNum">0</b> / <b id="lapTotal">3</b></div>
+    <div>時間 <b id="raceTimer">00:00.0</b></div>
+    <div class="best">最快 <b id="bestLap">--</b></div>
+  </div>
+</div>
+<div id="speedBox">
+  <div id="speedNum">0</div>
+  <div id="speedUnit">KM/H</div>
+</div>
+<div id="controls">
+  <kbd>↑</kbd> 加速 <kbd>↓</kbd> 煞車<br>
+  <kbd>←</kbd><kbd>→</kbd> 轉向 <kbd>V</kbd> 視角<br>
+  <kbd>R</kbd> 重置 <kbd>Space</kbd> 手煞車<br>
+  🎮 搖桿: 前後=加速煞車 左右=轉向
+</div>
+<div id="joyStatus">🔌 搖桿: 偵測中…</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════
+const TOTAL_LAPS = 3;
+const TRACK_WIDTH = 120;
+const CAR_LEN = 30, CAR_W = 16;
+
+// ═══════════════════════════════════════════════════════
+// TRACK — parametric circuit
+// ═══════════════════════════════════════════════════════
+const trackPts = [];
+const N_PTS = 600;
+for(let i = 0; i < N_PTS; i++){
+  const t = (i / N_PTS) * Math.PI * 2;
+  // interesting circuit shape
+  const x = Math.cos(t) * 700 + Math.cos(t*2) * 250 + Math.sin(t*3) * 80;
+  const y = Math.sin(t) * 500 + Math.sin(t*2) * 180 + Math.cos(t*3) * 60;
+  trackPts.push({x, y});
+}
+
+// precompute normals & edges
+const trackLeft = [], trackRight = [], trackNormals = [];
+for(let i = 0; i < N_PTS; i++){
+  const next = (i+1) % N_PTS;
+  const dx = trackPts[next].x - trackPts[i].x;
+  const dy = trackPts[next].y - trackPts[i].y;
+  const len = Math.sqrt(dx*dx + dy*dy) || 1;
+  const nx = -dy/len, ny = dx/len;
+  trackNormals.push({x:nx, y:ny});
+  trackLeft.push({x: trackPts[i].x + nx*TRACK_WIDTH/2, y: trackPts[i].y + ny*TRACK_WIDTH/2});
+  trackRight.push({x: trackPts[i].x - nx*TRACK_WIDTH/2, y: trackPts[i].y - ny*TRACK_WIDTH/2});
+}
+
+// ═══════════════════════════════════════════════════════
+// OBSTACLES
+// ═══════════════════════════════════════════════════════
+const obstacles = [];
+// place obstacles at certain track positions
+const obsPosIndices = [50, 120, 200, 280, 350, 420, 500, 560];
+obsPosIndices.forEach((idx, i) => {
+  const pt = trackPts[idx % N_PTS];
+  const n = trackNormals[idx % N_PTS];
+  const side = (i % 2 === 0) ? 1 : -1;
+  const offset = TRACK_WIDTH * 0.25 * side;
+  obstacles.push({
+    x: pt.x + n.x * offset,
+    y: pt.y + n.y * offset,
+    r: 12 + Math.random() * 8,
+    type: i % 3 === 0 ? 'cone' : i % 3 === 1 ? 'barrier' : 'oil',
+    color: i % 3 === 0 ? '#ff6600' : i % 3 === 1 ? '#cc0000' : '#335'
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+// CAR STATE
+// ═══════════════════════════════════════════════════════
+const CAR_START_IDX = 10; // 起點在 CP0 之後，避免開局就觸發 CP0
+let car = {
+  x: trackPts[CAR_START_IDX].x, y: trackPts[CAR_START_IDX].y,
+  angle: Math.atan2(trackPts[CAR_START_IDX+1].y - trackPts[CAR_START_IDX].y, trackPts[CAR_START_IDX+1].x - trackPts[CAR_START_IDX].x),
+  speed: 0, steer: 0, drift: 0,
+  laps: 0, cpIdx: 1, bestLap: null,  // cpIdx=1: 已過 CP0
+  lapStart: 0, raceTime: 0
+};
+
+function resetCar(){
+  car.x = trackPts[CAR_START_IDX].x; car.y = trackPts[CAR_START_IDX].y;
+  car.angle = Math.atan2(trackPts[CAR_START_IDX+1].y - trackPts[CAR_START_IDX].y, trackPts[CAR_START_IDX+1].x - trackPts[CAR_START_IDX].x);
+  car.speed = 0; car.steer = 0; car.drift = 0;
+  car.laps = 0; car.cpIdx = 1; car.bestLap = null;  // cpIdx=1: 已過 CP0
+  car.lapStart = 0; car.raceTime = 0;
+  cpClearedLast = true; // 重置檢查點冷卻
+}
+
+// ═══════════════════════════════════════════════════════
+// INPUT
+// ═══════════════════════════════════════════════════════
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if(e.code === 'KeyV') cycleView();
+  if(e.code === 'KeyR') resetCar();
+  e.preventDefault();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// ═══════════════════════════════════════════════════════
+// WEBSOCKET JOYSTICK (Pico W 6-button remote)
+// ═══════════════════════════════════════════════════════
+const joy = { jx: 0, jy: 0, a: 0, b: 0, connected: false, btns: [], prevB: 0 };
+
+function connectWS(){
+  const host = location.hostname || 'localhost';
+  const ws = new WebSocket('ws://'+host+':8765');
+  ws.onopen = () => { joy.connected = true; };
+  ws.onclose = () => { joy.connected = false; setTimeout(connectWS, 2000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      // Digital buttons: jy=1=forward(accel), jy=-1=back(brake)
+      // jx=-1=left, jx=1=right
+      joy.jx = d.jx || 0;
+      joy.jy = d.jy || 0;
+      joy.a = d.a || 0;
+      const newB = d.b || 0;
+      if (newB && !joy.prevB) cycleView();
+      joy.prevB = newB;
+      joy.b = newB;
+      joy.connected = true;
+    } catch(err){}
+  };
+}
+connectWS();
+
+// ═══════════════════════════════════════════════════════
+// VIEWS
+// ═══════════════════════════════════════════════════════
+const VIEWS = ['chase', 'bird', 'fp'];
+const VIEW_NAMES = {'chase':'CHASE CAM', 'bird':'BIRD\'S EYE', 'fp':'COCKPIT VIEW'};
+let viewIdx = 0;
+function cycleView(){ viewIdx = (viewIdx + 1) % VIEWS.length; updateViewLabel(); }
+function currentView(){ return VIEWS[viewIdx]; }
+function updateViewLabel(){
+  document.getElementById('viewLabel').textContent = VIEW_NAMES[currentView()] + ' — [V] 切換視角';
+}
+
+// ═══════════════════════════════════════════════════════
+// CANVAS
+// ═══════════════════════════════════════════════════════
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+const mm = document.getElementById('minimap');
+const mctx = mm.getContext('2d');
+
+function resize(){
+  cv.width = window.innerWidth;
+  cv.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ═══════════════════════════════════════════════════════
+// CHECKPOINT SYSTEM (4 CPs around the track)
+// ═══════════════════════════════════════════════════════
+const CP_COUNT = 4;
+const cpIndices = [];
+for(let i = 0; i < CP_COUNT; i++) cpIndices.push(Math.floor(i * N_PTS / CP_COUNT));
+
+let cpClearedLast = true; // 上一幀是否已離開檢查點區域（防連續觸發）
+const CP_RADIUS = 50;    // 縮小偵測半徑（原 80 太大）
+const CP_EXIT_RADIUS = 90; // 離開判定半徑
+
+function checkCheckpoints(){
+  const nextCP = cpIndices[car.cpIdx % CP_COUNT];
+  const cp = trackPts[nextCP];
+  const dx = car.x - cp.x, dy = car.y - cp.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+
+  // 必須先離開上一個觸發的檢查點範圍，才允許下一個觸發
+  if(!cpClearedLast){
+    if(dist > CP_EXIT_RADIUS) cpClearedLast = true;
+    return;
+  }
+
+  if(dist < CP_RADIUS){
+    car.cpIdx++;
+    cpClearedLast = false; // 進入冷卻，直到離開此區域
+    if(car.cpIdx % CP_COUNT === 0 && car.cpIdx > 0){
+      car.laps++;
+      const lapTime = car.raceTime - car.lapStart;
+      if(car.laps > 0 && (car.bestLap === null || lapTime < car.bestLap)){
+        car.bestLap = lapTime;
+      }
+      car.lapStart = car.raceTime;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// PHYSICS
+// ═══════════════════════════════════════════════════════
+function updateCar(dt){
+  car.raceTime += dt;
+
+  // ── 統一輸入：Pico W 搖桿/按鈕 + 鍵盤 合併處理 ──
+  // Pico W 搖桿現在用方向盤物理（跟鍵盤完全相同），不再直線移動
+  // Pico W 搖桿（加死區過濾 0.05，搭配 rc_car.py v4 四層濾波）
+  const pJx = Math.abs(joy.jx) > 0.05 ? joy.jx : 0;
+  const pJy = Math.abs(joy.jy) > 0.05 ? joy.jy : 0;
+  const picoActive = joy.connected && (pJx !== 0 || pJy !== 0 || joy.a);
+  const accel = (keys['ArrowUp'] || keys['KeyW'] || (picoActive && pJy > 0)) ? 1 : 0;
+  const brake = (keys['ArrowDown'] || keys['KeyS'] || (picoActive && pJy < 0)) ? 1 : 0;
+  const left  = (keys['ArrowLeft'] || keys['KeyA'] || (picoActive && pJx < 0)) ? 1 : 0;
+  const right = (keys['ArrowRight'] || keys['KeyD'] || (picoActive && pJx > 0)) ? 1 : 0;
+  const handbrake = keys['Space'] || (picoActive && joy.a) ? 1 : 0;
+  {
+    const maxSpeed = 450;
+    const accelForce = 380;
+    const brakeForce = 600;
+    const friction = 0.97;
+    const turnRate = 2.2;
+
+    if(accel) car.speed += accelForce * dt;
+    if(brake) car.speed -= brakeForce * dt;
+    if(handbrake) car.speed *= 0.95;
+
+    car.speed *= friction;
+    if(Math.abs(car.speed) < 1) car.speed = 0;
+    if(car.speed > maxSpeed) car.speed = maxSpeed;
+    if(car.speed < -maxSpeed * 0.3) car.speed = -maxSpeed * 0.3;
+
+    const steerAmount = (left - right) * turnRate * dt;
+    const speedFactor = Math.min(Math.abs(car.speed) / 150, 1);
+    car.angle += steerAmount * speedFactor * (car.speed >= 0 ? 1 : -1);
+
+    if(handbrake && Math.abs(car.speed) > 50){
+      car.drift += steerAmount * 2;
+    }
+    car.drift *= 0.92;
+
+    const moveAngle = car.angle + car.drift * 0.3;
+    car.x += Math.cos(moveAngle) * car.speed * dt;
+    car.y += Math.sin(moveAngle) * car.speed * dt;
+  }
+
+  // obstacle collision
+  obstacles.forEach(ob => {
+    const dx = car.x - ob.x, dy = car.y - ob.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist < ob.r + 15){
+      // bounce back
+      const nx = dx / dist, ny = dy / dist;
+      car.x = ob.x + nx * (ob.r + 16);
+      car.y = ob.y + ny * (ob.r + 16);
+      if(ob.type === 'oil'){
+        car.drift += (Math.random() - 0.5) * 0.8;
+        car.speed *= 0.85;
+      } else {
+        car.speed *= 0.4;
+      }
+    }
+  });
+
+  // off-track penalty (slow down on grass)
+  const nearest = findNearestTrackIdx();
+  const tp = trackPts[nearest];
+  const distToCenter = Math.sqrt((car.x-tp.x)**2 + (car.y-tp.y)**2);
+  if(distToCenter > TRACK_WIDTH * 0.55){
+    car.speed *= 0.96; // grass friction
+  }
+
+  checkCheckpoints();
+}
+
+function findNearestTrackIdx(){
+  let best = 0, bestD = Infinity;
+  // sample every 10th point for performance
+  for(let i = 0; i < N_PTS; i += 6){
+    const dx = car.x - trackPts[i].x, dy = car.y - trackPts[i].y;
+    const d = dx*dx + dy*dy;
+    if(d < bestD){ bestD = d; best = i; }
+  }
+  return best;
+}
+
+// ═══════════════════════════════════════════════════════
+// DRAW — CHASE VIEW (camera behind car, world rotates)
+// ═══════════════════════════════════════════════════════
+function drawChase(){
+  const W = cv.width, H = cv.height;
+  ctx.save();
+  // camera behind the car
+  ctx.translate(W/2, H * 0.7);
+  ctx.rotate(-car.angle + Math.PI/2);
+  ctx.translate(-car.x, -car.y);
+
+  drawWorld();
+
+  // draw car (always centered)
+  drawCarSprite(car.x, car.y, car.angle);
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════
+// DRAW — BIRD'S EYE VIEW
+// ═══════════════════════════════════════════════════════
+function drawBird(){
+  const W = cv.width, H = cv.height;
+  ctx.save();
+  const scale = 0.45;
+  ctx.translate(W/2, H/2);
+  ctx.scale(scale, scale);
+  ctx.translate(-car.x, -car.y);
+
+  drawWorld();
+  drawCarSprite(car.x, car.y, car.angle);
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════
+// DRAW — FIRST PERSON (pseudo-3D)
+// ═══════════════════════════════════════════════════════
+function drawFP(){
+  const W = cv.width, H = cv.height;
+  const horizon = H * 0.38;
+
+  // sky gradient
+  const skyG = ctx.createLinearGradient(0, 0, 0, horizon);
+  skyG.addColorStop(0, '#001133');
+  skyG.addColorStop(1, '#003366');
+  ctx.fillStyle = skyG;
+  ctx.fillRect(0, 0, W, horizon);
+
+  // stars
+  ctx.fillStyle = '#fff';
+  for(let i = 0; i < 60; i++){
+    const sx = (i * 137.5 + car.angle * 80) % W;
+    const sy = (i * 73.1) % horizon;
+    ctx.fillRect(sx, sy, 1, 1);
+  }
+
+  // ground gradient
+  const gndG = ctx.createLinearGradient(0, horizon, 0, H);
+  gndG.addColorStop(0, '#1a3a1a');
+  gndG.addColorStop(1, '#0a200a');
+  ctx.fillStyle = gndG;
+  ctx.fillRect(0, horizon, W, H - horizon);
+
+  // project road segments
+  const focal = 120;
+  const camH = 40;
+  const lookAhead = 180;
+
+  // find current track index
+  const curIdx = findNearestTrackIdx();
+
+  for(let d = lookAhead; d >= 2; d -= 2){
+    const idx = (curIdx + d) % N_PTS;
+    const prevIdx = (curIdx + d - 2) % N_PTS;
+
+    // relative to car
+    const project = (px, py) => {
+      let rx = px - car.x, ry = py - car.y;
+      const ca = Math.cos(-car.angle), sa = Math.sin(-car.angle);
+      const lx = rx * ca - ry * sa;
+      const ly = rx * sa + ry * ca;
+      if(ly < 5) return null;
+      const sx = W/2 + (lx * focal / ly) * 8;
+      const sy = horizon + (camH * focal / ly) * 8;
+      const sc = focal / ly * 2;
+      return {x: sx, y: sy, s: sc};
+    };
+
+    const farL = project(trackLeft[idx].x, trackLeft[idx].y);
+    const farR = project(trackRight[idx].x, trackRight[idx].y);
+    const nearL = project(trackLeft[prevIdx].x, trackLeft[prevIdx].y);
+    const nearR = project(trackRight[prevIdx].x, trackRight[prevIdx].y);
+
+    if(!farL || !farR || !nearL || !nearR) continue;
+    if(farL.y > H + 100 || nearL.y < horizon - 20) continue;
+
+    // road surface
+    const stripe = (idx % 20 < 10);
+    ctx.fillStyle = stripe ? '#333' : '#2a2a2a';
+    ctx.beginPath();
+    ctx.moveTo(nearL.x, nearL.y);
+    ctx.lineTo(farL.x, farL.y);
+    ctx.lineTo(farR.x, farR.y);
+    ctx.lineTo(nearR.x, nearR.y);
+    ctx.fill();
+
+    // edge lines (curb)
+    ctx.strokeStyle = stripe ? '#ff0' : '#f00';
+    ctx.lineWidth = Math.max(1, nearL.s * 3);
+    ctx.beginPath(); ctx.moveTo(nearL.x, nearL.y); ctx.lineTo(farL.x, farL.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(nearR.x, nearR.y); ctx.lineTo(farR.x, farR.y); ctx.stroke();
+
+    // center dashes
+    if(stripe){
+      const cx1 = (nearL.x + nearR.x)/2, cy1 = (nearL.y + nearR.y)/2;
+      const cx2 = (farL.x + farR.x)/2, cy2 = (farL.y + farR.y)/2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = Math.max(1, nearL.s * 2);
+      ctx.setLineDash([8, 12]);
+      ctx.beginPath(); ctx.moveTo(cx1, cy1); ctx.lineTo(cx2, cy2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // project obstacles
+  obstacles.forEach(ob => {
+    let rx = ob.x - car.x, ry = ob.y - car.y;
+    const ca = Math.cos(-car.angle), sa = Math.sin(-car.angle);
+    const lx = rx * ca - ry * sa;
+    const ly = rx * sa + ry * ca;
+    if(ly < 10 || ly > 1200) return;
+    const sx = W/2 + (lx * focal / ly) * 8;
+    const sy = horizon + (camH * focal / ly) * 8;
+    const sc = focal / ly * ob.r * 0.6;
+    ctx.fillStyle = ob.color;
+    ctx.beginPath(); ctx.arc(sx, sy, Math.max(2, sc * 8), 0, Math.PI*2); ctx.fill();
+    if(ob.type === 'cone'){
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(sx, sy - sc*4, Math.max(1, sc*3), 0, Math.PI*2); ctx.fill();
+    }
+  });
+
+  // dashboard / car hood hint
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.moveTo(W * 0.25, H);
+  ctx.quadraticCurveTo(W/2, H * 0.88, W * 0.75, H);
+  ctx.lineTo(W, H); ctx.lineTo(0, H);
+  ctx.fill();
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(W * 0.25, H);
+  ctx.quadraticCurveTo(W/2, H * 0.88, W * 0.75, H);
+  ctx.stroke();
+
+  // steering wheel indicator
+  const swX = W/2, swY = H * 0.92;
+  ctx.save();
+  ctx.translate(swX, swY);
+  ctx.rotate(-car.steer * 0.5);
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(0, 0, 30, 0.3, Math.PI - 0.3); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, 30, Math.PI + 0.3, -0.3); ctx.stroke();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════
+// DRAW WORLD (track, obstacles) — used by chase & bird
+// ═══════════════════════════════════════════════════════
+function drawWorld(){
+  // grass background
+  ctx.fillStyle = '#0d1a0d';
+  ctx.fillRect(car.x - 2000, car.y - 2000, 4000, 4000);
+
+  // grass grid
+  ctx.strokeStyle = 'rgba(0,60,0,.15)'; ctx.lineWidth = 1;
+  const gs = 100;
+  const sx = Math.floor((car.x - 2000)/gs)*gs;
+  const sy = Math.floor((car.y - 2000)/gs)*gs;
+  for(let gx = sx; gx < car.x + 2000; gx += gs){
+    ctx.beginPath(); ctx.moveTo(gx, car.y-2000); ctx.lineTo(gx, car.y+2000); ctx.stroke();
+  }
+  for(let gy = sy; gy < car.y + 2000; gy += gs){
+    ctx.beginPath(); ctx.moveTo(car.x-2000, gy); ctx.lineTo(car.x+2000, gy); ctx.stroke();
+  }
+
+  // track surface
+  ctx.beginPath();
+  ctx.moveTo(trackLeft[0].x, trackLeft[0].y);
+  for(let i = 1; i < N_PTS; i++) ctx.lineTo(trackLeft[i].x, trackLeft[i].y);
+  ctx.closePath();
+  for(let i = N_PTS-1; i >= 0; i--) ctx.lineTo(trackRight[i].x, trackRight[i].y);
+  ctx.closePath();
+  ctx.fillStyle = '#222';
+  ctx.fill('evenodd');
+
+  // track edges
+  ctx.strokeStyle = '#ff0'; ctx.lineWidth = 3;
+  ctx.setLineDash([12, 8]);
+  ctx.beginPath();
+  for(let i = 0; i < N_PTS; i++){
+    i === 0 ? ctx.moveTo(trackLeft[i].x, trackLeft[i].y) : ctx.lineTo(trackLeft[i].x, trackLeft[i].y);
+  }
+  ctx.closePath(); ctx.stroke();
+  ctx.beginPath();
+  for(let i = 0; i < N_PTS; i++){
+    i === 0 ? ctx.moveTo(trackRight[i].x, trackRight[i].y) : ctx.lineTo(trackRight[i].x, trackRight[i].y);
+  }
+  ctx.closePath(); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // center dashes
+  ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 1;
+  ctx.setLineDash([6, 14]);
+  ctx.beginPath();
+  for(let i = 0; i < N_PTS; i++){
+    i === 0 ? ctx.moveTo(trackPts[i].x, trackPts[i].y) : ctx.lineTo(trackPts[i].x, trackPts[i].y);
+  }
+  ctx.closePath(); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // start/finish line
+  const sf0 = trackLeft[0], sf1 = trackRight[0];
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.setLineDash([8, 8]);
+  ctx.beginPath(); ctx.moveTo(sf0.x, sf0.y); ctx.lineTo(sf1.x, sf1.y); ctx.stroke();
+  ctx.setLineDash([]);
+  // text parallel to the line
+  const sfMx = (sf0.x+sf1.x)/2, sfMy = (sf0.y+sf1.y)/2;
+  const sfAng = Math.atan2(sf1.y - sf0.y, sf1.x - sf0.x);
+  ctx.save();
+  ctx.translate(sfMx, sfMy);
+  ctx.rotate(sfAng);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('START / FINISH', 0, -6);
+  ctx.restore();
+
+  // checkpoints
+  for(let i = 0; i < CP_COUNT; i++){
+    const ci = cpIndices[i];
+    const cl = trackLeft[ci], cr = trackRight[ci];
+    const done = car.cpIdx % CP_COUNT > i || (car.cpIdx >= CP_COUNT && car.cpIdx % CP_COUNT <= i);
+    ctx.strokeStyle = done ? 'rgba(0,255,0,.4)' : 'rgba(0,150,255,.4)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(cl.x, cl.y); ctx.lineTo(cr.x, cr.y); ctx.stroke();
+  }
+
+  // obstacles
+  obstacles.forEach(ob => {
+    ctx.fillStyle = ob.color;
+    if(ob.type === 'cone'){
+      ctx.beginPath(); ctx.arc(ob.x, ob.y, ob.r, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(ob.x, ob.y - ob.r*0.3, ob.r*0.4, 0, Math.PI*2); ctx.fill();
+    } else if(ob.type === 'barrier'){
+      ctx.fillRect(ob.x - ob.r, ob.y - ob.r*0.5, ob.r*2, ob.r);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(ob.x - ob.r, ob.y - ob.r*0.5, ob.r*0.6, ob.r);
+    } else {
+      // oil
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath(); ctx.ellipse(ob.x, ob.y, ob.r*1.5, ob.r, 0, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  });
+}
+
+function drawCarSprite(x, y, angle){
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,.4)';
+  ctx.beginPath(); ctx.ellipse(2, 4, CAR_LEN*0.6, CAR_W*0.5, 0, 0, Math.PI*2); ctx.fill();
+
+  // body
+  ctx.fillStyle = '#e00';
+  ctx.strokeStyle = '#f44'; ctx.lineWidth = 1.5;
+  ctx.shadowColor = '#f00'; ctx.shadowBlur = 15;
+  ctx.beginPath(); ctx.roundRect(-CAR_LEN/2, -CAR_W/2, CAR_LEN, CAR_W, 4); ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // cockpit
+  ctx.fillStyle = '#200';
+  ctx.beginPath(); ctx.roundRect(-2, -CAR_W*0.3, CAR_LEN*0.3, CAR_W*0.6, 2); ctx.fill();
+
+  // headlights
+  ctx.fillStyle = '#ff8';
+  ctx.beginPath(); ctx.ellipse(CAR_LEN/2 - 2, -CAR_W*0.3, 3, 2, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(CAR_LEN/2 - 2, CAR_W*0.3, 3, 2, 0, 0, Math.PI*2); ctx.fill();
+
+  // tail lights
+  ctx.fillStyle = '#f00';
+  ctx.fillRect(-CAR_LEN/2, -CAR_W*0.35, 3, 4);
+  ctx.fillRect(-CAR_LEN/2, CAR_W*0.35 - 4, 3, 4);
+
+  // wheels
+  ctx.fillStyle = '#111';
+  [[-10,-CAR_W/2-2],[-10,CAR_W/2-2],[10,-CAR_W/2-2],[10,CAR_W/2-2]].forEach(([wx,wy]) => {
+    ctx.fillRect(wx-4, wy, 8, 4);
+  });
+
+  // number
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('1', 0, 3);
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════
+// MINI-MAP
+// ═══════════════════════════════════════════════════════
+function drawMinimap(){
+  const W = mm.width, H = mm.height;
+  mctx.clearRect(0, 0, W, H);
+  mctx.fillStyle = 'rgba(0,0,0,.85)';
+  mctx.fillRect(0, 0, W, H);
+
+  // find bounding box of track
+  let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+  trackPts.forEach(p => {
+    if(p.x < minX) minX = p.x; if(p.x > maxX) maxX = p.x;
+    if(p.y < minY) minY = p.y; if(p.y > maxY) maxY = p.y;
+  });
+  const pad = 60;
+  minX -= pad; maxX += pad; minY -= pad; maxY += pad;
+  const sx = W / (maxX - minX);
+  const sy = H / (maxY - minY);
+  const s = Math.min(sx, sy);
+  const ox = (W - (maxX - minX) * s) / 2;
+  const oy = (H - (maxY - minY) * s) / 2;
+
+  const tx = (x) => ox + (x - minX) * s;
+  const ty = (y) => oy + (y - minY) * s;
+
+  // track
+  mctx.strokeStyle = '#444'; mctx.lineWidth = Math.max(2, TRACK_WIDTH * s);
+  mctx.lineCap = 'round'; mctx.lineJoin = 'round';
+  mctx.beginPath();
+  trackPts.forEach((p, i) => i === 0 ? mctx.moveTo(tx(p.x), ty(p.y)) : mctx.lineTo(tx(p.x), ty(p.y)));
+  mctx.closePath(); mctx.stroke();
+
+  // obstacles
+  obstacles.forEach(ob => {
+    mctx.fillStyle = ob.color;
+    mctx.beginPath(); mctx.arc(tx(ob.x), ty(ob.y), 2, 0, Math.PI*2); mctx.fill();
+  });
+
+  // car
+  mctx.fillStyle = '#f00';
+  mctx.beginPath(); mctx.arc(tx(car.x), ty(car.y), 4, 0, Math.PI*2); mctx.fill();
+  // direction
+  mctx.strokeStyle = '#ff0'; mctx.lineWidth = 1.5;
+  mctx.beginPath();
+  mctx.moveTo(tx(car.x), ty(car.y));
+  mctx.lineTo(tx(car.x + Math.cos(car.angle)*30), ty(car.y + Math.sin(car.angle)*30));
+  mctx.stroke();
+
+  // label
+  mctx.fillStyle = '#888'; mctx.font = '9px sans-serif'; mctx.textAlign = 'center';
+  mctx.fillText('MAP', W/2, H - 4);
+}
+
+// ═══════════════════════════════════════════════════════
+// HUD UPDATE
+// ═══════════════════════════════════════════════════════
+function updateHUD(){
+  const kmh = Math.abs(car.speed) * 0.8; // scale to "km/h feel"
+  document.getElementById('speedNum').textContent = Math.round(kmh);
+  document.getElementById('speedNum').style.color =
+    kmh > 280 ? '#f00' : kmh > 180 ? '#ff0' : '#0f0';
+  document.getElementById('lapNum').textContent = Math.min(car.laps, TOTAL_LAPS);
+  document.getElementById('lapTotal').textContent = TOTAL_LAPS;
+
+  const t = car.raceTime;
+  const m = String(Math.floor(t/60)).padStart(2,'0');
+  const s = String(Math.floor(t%60)).padStart(2,'0');
+  const ms = String(Math.floor((t%1)*10));
+  document.getElementById('raceTimer').textContent = m+':'+s+'.'+ms;
+
+  document.getElementById('bestLap').textContent =
+    car.bestLap !== null ? fmtTime(car.bestLap) : '--';
+
+  // joystick status indicator
+  const jEl = document.getElementById('joyStatus');
+  if(joy.connected){
+    jEl.style.background = 'rgba(0,80,0,.8)';
+    jEl.style.color = '#0f0';
+    jEl.textContent = `🎮 搖桿已連線  X:${joy.jx.toFixed(2)} Y:${joy.jy.toFixed(2)}`;
+  } else {
+    jEl.style.background = 'rgba(60,0,0,.8)';
+    jEl.style.color = '#f66';
+    jEl.textContent = '🔌 搖桿: 偵測中…';
+  }
+}
+
+function fmtTime(sec){
+  const m = Math.floor(sec/60);
+  const s = (sec%60).toFixed(1);
+  return (m > 0 ? m + 'm' : '') + s + 's';
+}
+
+// ═══════════════════════════════════════════════════════
+// GAME LOOP
+// ═══════════════════════════════════════════════════════
+let lastTime = 0;
+
+function gameLoop(ts){
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+
+  updateCar(dt);
+
+  // clear
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  // draw based on view
+  const view = currentView();
+  if(view === 'chase') drawChase();
+  else if(view === 'bird') drawBird();
+  else if(view === 'fp') drawFP();
+
+  drawMinimap();
+  updateHUD();
+
+  // win check
+  if(car.laps >= TOTAL_LAPS){
+    ctx.fillStyle = 'rgba(0,0,0,.6)';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#ffb700';
+    ctx.font = 'bold 64px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('FINISH!', cv.width/2, cv.height/2 - 20);
+    ctx.font = '24px sans-serif'; ctx.fillStyle = '#fff';
+    ctx.fillText('總時間: ' + fmtTime(car.raceTime) + '   最快圈速: ' + fmtTime(car.bestLap), cv.width/2, cv.height/2 + 30);
+    ctx.font = '16px sans-serif'; ctx.fillStyle = '#888';
+    ctx.fillText('按 R 重新開始', cv.width/2, cv.height/2 + 70);
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

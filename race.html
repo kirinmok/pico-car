@@ -1,0 +1,1971 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pico W 3D Racing — 橢圓賽道</title>
+<style>
+body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, sans-serif; }
+canvas { display: block; }
+
+#hud {
+  position: absolute; top: 20px; left: 20px;
+  color: #0f0; background: rgba(0,20,0,0.85);
+  padding: 15px 20px; border: 2px solid #0f0; border-radius: 10px;
+  pointer-events: none; min-width: 200px;
+}
+#hud h2 { margin: 0 0 8px 0; font-size: 18px; letter-spacing: 2px; }
+.data-row { font-size: 15px; margin-bottom: 4px; font-weight: bold; }
+.data-row span { color: #0f0; }
+
+#speedGauge {
+  position: absolute; right: 30px; bottom: 30px;
+  width: 150px; height: 150px;
+  background: rgba(0,0,0,0.8); border: 2px solid #333;
+  border-radius: 50%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; pointer-events: none;
+}
+#speedNum { font-size: 44px; font-weight: 900; color: #0f0; font-family: 'Courier New', monospace; }
+#speedUnit { font-size: 11px; color: #888; letter-spacing: 2px; }
+
+#minimap {
+  position: absolute; top: 20px; right: 20px;
+  width: 200px; height: 120px;
+  background: rgba(0,0,0,0.85); border: 2px solid #555; border-radius: 10px;
+}
+
+#viewTip {
+  position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+  color: #ccc; background: rgba(0,0,0,0.7);
+  padding: 8px 20px; border-radius: 20px; font-size: 13px;
+  pointer-events: none; white-space: nowrap;
+}
+
+#countdown {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 0;
+  pointer-events: none; z-index: 20;
+}
+#cdNum {
+  font-size: 180px; font-weight: 900; font-style: italic;
+  color: rgba(255,183,0,0.9); text-shadow: 0 0 60px rgba(255,183,0,0.5);
+  opacity: 0; transition: opacity 0.2s, transform 0.15s;
+  font-family: 'Segoe UI', sans-serif;
+}
+#cdNum.show { opacity: 1; }
+#flagWrap {
+  position: absolute; top: 12%; left: 50%; transform: translateX(-50%);
+  pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  z-index: 21;
+}
+#flagWrap.show { opacity: 1; }
+#flagCanvas {
+  width: 160px; height: 120px;
+  filter: drop-shadow(0 4px 20px rgba(0,0,0,0.6));
+}
+@keyframes flagSwing {
+  0%   { transform: translateX(-50%) rotate(-12deg); }
+  50%  { transform: translateX(-50%) rotate(12deg); }
+  100% { transform: translateX(-50%) rotate(-12deg); }
+}
+@keyframes flagSlam {
+  0%   { transform: translateX(-50%) rotate(-30deg); }
+  40%  { transform: translateX(-50%) rotate(25deg); }
+  100% { transform: translateX(-50%) rotate(0deg); }
+}
+#flagWrap.swing { animation: flagSwing 0.6s ease-in-out infinite; }
+#flagWrap.slam  { animation: flagSlam 0.4s ease-out forwards; }
+
+#lapInfo {
+  position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+  color: #ffb700; background: rgba(0,0,0,0.8);
+  padding: 8px 24px; border-radius: 10px; font-size: 16px;
+  font-weight: 900; letter-spacing: 2px; pointer-events: none;
+  border: 1px solid rgba(255,183,0,0.3);
+}
+
+#picoStatus {
+  position: absolute; bottom: 20px; right: 20px;
+  padding: 6px 14px; border-radius: 20px; font-size: 12px;
+  pointer-events: none;
+}
+.pico-on { background: rgba(0,80,0,0.8); color: #0f0; border: 1px solid #0f04; }
+.pico-off { background: rgba(60,0,0,0.8); color: #f66; border: 1px solid #f004; }
+
+#driftBar {
+  position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
+  width: 200px; height: 14px; background: rgba(0,0,0,0.6);
+  border: 2px solid #555; border-radius: 8px; overflow: hidden;
+  pointer-events: none; display: none;
+}
+#driftFill {
+  height: 100%; width: 0%; border-radius: 6px;
+  transition: background 0.15s;
+}
+
+#scoreHud { display: none; }
+#powerUpMsg {
+  position: absolute; top: 38%; left: 50%; transform: translate(-50%,-50%);
+  font-size: 42px; font-weight: 900; color: #fff;
+  text-shadow: 0 0 30px rgba(255,200,0,0.9), 0 0 60px rgba(255,100,0,0.5);
+  pointer-events: none; opacity: 0; transition: opacity 0.4s;
+  z-index: 15; letter-spacing: 4px;
+}
+#lightspeedOverlay {
+  position: absolute; inset: 0; pointer-events: none; z-index: 10;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(0,150,255,0.15) 100%);
+  opacity: 0; transition: opacity 0.5s;
+}
+#lightspeedOverlay.active {
+  opacity: 1;
+  animation: lsPulse 0.4s ease-in-out infinite alternate;
+}
+@keyframes lsPulse {
+  from { background: radial-gradient(ellipse at center, transparent 30%, rgba(0,150,255,0.12) 100%); }
+  to   { background: radial-gradient(ellipse at center, transparent 20%, rgba(100,200,255,0.25) 100%); }
+}
+#lightspeedTimer {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  font-size: 64px; font-weight: 900; color: rgba(100,200,255,0.8);
+  text-shadow: 0 0 40px rgba(0,150,255,0.8);
+  pointer-events: none; opacity: 0; z-index: 16;
+  font-family: 'Courier New', monospace;
+}
+
+#resultScreen {
+  position: absolute; inset: 0; display: none;
+  background: rgba(0,0,0,0.85); z-index: 30;
+  flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+}
+#resultScreen.show { display: flex; }
+#resultScreen h1 { font-size: 48px; color: #FFD700; margin: 0; }
+#resultScreen .rank-line { font-size: 22px; color: #eee; }
+#resultScreen .rank-line.player { color: #f5c842; font-size: 26px; }
+#resultScreen .stats { color: #aaa; font-size: 15px; margin-top: 8px; }
+#restartBtn {
+  margin-top: 20px; padding: 14px 40px; font-size: 20px; font-weight: 900;
+  background: #f5c842; color: #111; border: none; border-radius: 12px;
+  cursor: pointer; letter-spacing: 2px;
+}
+#restartBtn:hover { background: #ffd866; }
+
+#historyBoard {
+  position: absolute; bottom: 20px; left: 20px;
+  background: rgba(0,0,0,0.75); border: 1px solid #444; border-radius: 10px;
+  padding: 10px 14px; min-width: 180px; pointer-events: none;
+  z-index: 5;
+}
+#historyBoard h3 {
+  margin: 0 0 6px 0; font-size: 13px; color: #f5c842;
+  letter-spacing: 1px; border-bottom: 1px solid #333; padding-bottom: 4px;
+}
+#historyBoard .h-row {
+  font-size: 12px; color: #ccc; margin: 3px 0; display: flex;
+  justify-content: space-between;
+}
+#historyBoard .h-row.best { color: #FFD700; font-weight: 700; }
+#historyBoard .h-rank { color: #888; width: 24px; }
+#historyBoard .h-score { color: #f5c842; font-weight: 700; }
+#historyBoard .h-pos { font-size: 11px; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+<div id="hud">
+  <h2>OVAL RACING</h2>
+  <div class="data-row">速度: <span id="hSpeed">0</span> km/h</div>
+  <div class="data-row">名次: <span id="hRank">--</span></div>
+  <div class="data-row">狀態: <span id="hStatus">ON TRACK</span></div>
+  <div class="data-row" style="color:#f5c842">得分: <span id="hScore" style="color:#f5c842">0</span></div>
+</div>
+
+<div id="lapInfo">圈數 <span id="lapCur">0</span> / <span id="lapMax">3</span></div>
+
+<div id="speedGauge">
+  <div id="speedNum">0</div>
+  <div id="speedUnit">KM/H</div>
+</div>
+
+<canvas id="minimap" width="200" height="120"></canvas>
+<div id="viewTip">黃=加速 紅=煞車 藍綠=切車道 白=甩尾 黑=視角 | W/S/A/D + Shift甩尾</div>
+<div id="countdown"><div id="cdNum">3</div></div>
+<div id="flagWrap"><canvas id="flagCanvas" width="160" height="120"></canvas></div>
+<div id="picoStatus" class="pico-off">Pico W: 偵測中...</div>
+<div id="driftBar"><div id="driftFill"></div></div>
+<div id="scoreHud">🏆 0 分</div>
+<div id="historyBoard">
+  <h3>歷史排行</h3>
+  <div id="historyRows"></div>
+</div>
+<div id="powerUpMsg"></div>
+<div id="lightspeedOverlay"></div>
+<div id="lightspeedTimer"></div>
+<div id="resultScreen">
+  <h1>🏁 比賽結束</h1>
+  <div id="resultRanks"></div>
+  <div id="resultStats" class="stats"></div>
+  <button id="restartBtn" onclick="hideResults(); resetRace();">再來一場 (R)</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// OVAL TRACK CONFIG
+// ═══════════════════════════════════════════════
+const TOTAL_LAPS = 3;
+const HL = 100;        // half-length of straight sections
+const TR = 55;         // turn radius (centerline)
+const TW = 52;         // total track width
+const LANE_COUNT = 4;
+const LANE_W = TW / LANE_COUNT;
+
+// Lane lateral offsets: negative=inner, 0=center, positive=outer
+const LANE_OFFSETS = [];
+for(let i = 0; i < LANE_COUNT; i++){
+  LANE_OFFSETS.push(-TW/2 + (i + 0.5) * LANE_W);
+}
+
+// Segment lengths
+const L_STRAIGHT = 2 * HL;
+const L_TURN = Math.PI * TR;
+const L_TOTAL = 2 * L_STRAIGHT + 2 * L_TURN;
+const B1 = L_STRAIGHT;
+const B2 = B1 + L_TURN;
+const B3 = B2 + L_STRAIGHT;
+
+// ═══════════════════════════════════════════════
+// TRACK PATH FUNCTION
+// ═══════════════════════════════════════════════
+function getTrackPoint(dist, lateralOffset){
+  dist = ((dist % L_TOTAL) + L_TOTAL) % L_TOTAL;
+  const lo = lateralOffset || 0;
+
+  if(dist < B1){
+    // Bottom straight → going right (+X)
+    return { x: -HL + dist, z: TR + lo, heading: 0 };
+  }
+  if(dist < B2){
+    // Right semicircle
+    const t = dist - B1;
+    const a = Math.PI/2 - t / TR;
+    return {
+      x: HL + Math.cos(a) * (TR + lo),
+      z: Math.sin(a) * (TR + lo),
+      heading: Math.atan2(-Math.cos(a), Math.sin(a))
+    };
+  }
+  if(dist < B3){
+    // Top straight → going left (-X)
+    const t = dist - B2;
+    return { x: HL - t, z: -TR - lo, heading: Math.PI };
+  }
+  // Left semicircle
+  const t = dist - B3;
+  const a = -Math.PI/2 - t / TR;
+  return {
+    x: -HL + Math.cos(a) * (TR + lo),
+    z: Math.sin(a) * (TR + lo),
+    heading: Math.atan2(-Math.cos(a), Math.sin(a))
+  };
+}
+
+function headingToRotY(h){ return -h + Math.PI/2; }
+
+// ═══════════════════════════════════════════════
+// THREE.JS SCENE
+// ═══════════════════════════════════════════════
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.Fog(0x87ceeb, 150, 500);
+
+const chaseCamera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+const fpCamera = new THREE.PerspectiveCamera(90, innerWidth/innerHeight, 0.1, 1000);
+const birdCamera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
+birdCamera.position.set(0, 250, 0);
+birdCamera.lookAt(0, 0, 0);
+
+const VIEWS = [chaseCamera, birdCamera, fpCamera];
+const VIEW_NAMES = ['追蹤視角', '鳥瞰視角', '駕駛艙視角'];
+let viewIdx = 0;
+let currentCamera = VIEWS[0];
+
+function cycleView(){
+  viewIdx = (viewIdx + 1) % VIEWS.length;
+  currentCamera = VIEWS[viewIdx];
+  document.getElementById('viewTip').textContent = VIEW_NAMES[viewIdx] + ' | [V]/黑鈕 切換';
+}
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+// Lights
+const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+sunLight.position.set(80, 150, 80);
+sunLight.castShadow = true;
+scene.add(sunLight);
+scene.add(new THREE.AmbientLight(0x707070));
+
+// Ground
+const groundGeo = new THREE.PlaneGeometry(1000, 1000);
+const groundMat = new THREE.MeshLambertMaterial({ color: 0x2d7a27 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ═══════════════════════════════════════════════
+// BUILD OVAL TRACK
+// ═══════════════════════════════════════════════
+function ovalPathPoints(lateralOffset, segments){
+  const pts = [];
+  segments = segments || 256;
+  for(let i = 0; i <= segments; i++){
+    const d = (i / segments) * L_TOTAL;
+    const p = getTrackPoint(d, lateralOffset);
+    pts.push({ x: p.x, z: p.z });
+  }
+  return pts;
+}
+
+// Track surface (ShapeGeometry)
+{
+  const outer = ovalPathPoints(TW/2, 256);
+  const inner = ovalPathPoints(-TW/2, 256);
+
+  const shape = new THREE.Shape();
+  shape.moveTo(outer[0].x, outer[0].z);
+  for(let i = 1; i < outer.length; i++) shape.lineTo(outer[i].x, outer[i].z);
+  shape.closePath();
+
+  const hole = new THREE.Path();
+  // Inner path must go opposite direction for hole
+  hole.moveTo(inner[inner.length-1].x, inner[inner.length-1].z);
+  for(let i = inner.length-2; i >= 0; i--) hole.lineTo(inner[i].x, inner[i].z);
+  hole.closePath();
+  shape.holes.push(hole);
+
+  const geo = new THREE.ShapeGeometry(shape);
+  const mat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.06;
+  scene.add(mesh);
+}
+
+// Lane & edge lines
+function createOvalLine(lateralOffset, color, dashed){
+  const pts = ovalPathPoints(lateralOffset, 256);
+  const verts = pts.map(p => new THREE.Vector3(p.x, 0.08, p.z));
+  const geo = new THREE.BufferGeometry().setFromPoints(verts);
+  const mat = dashed
+    ? new THREE.LineDashedMaterial({ color, dashSize: 3, gapSize: 3 })
+    : new THREE.LineBasicMaterial({ color });
+  const line = new THREE.Line(geo, mat);
+  if(dashed) line.computeLineDistances();
+  return line;
+}
+// Edges (solid yellow)
+scene.add(createOvalLine(-TW/2, 0xffcc00));
+scene.add(createOvalLine(TW/2, 0xffcc00));
+// Lane dividers (dashed white)
+for(let i = 1; i < LANE_COUNT; i++){
+  scene.add(createOvalLine(LANE_OFFSETS[i] - LANE_W/2, 0xffffff, true));
+}
+
+// Start/Finish line at middle of bottom straight (dist = HL)
+// Line crosses the track perpendicular (along Z axis)
+{
+  const startDist = HL;
+  const p = getTrackPoint(startDist, 0);
+  // 地面起跑線格子（單層，不重疊，避免 Z-fighting）
+  const gridCols = 10;
+  const gridRows = 2;
+  const gcW = TW / gridCols;
+  const gcH = 2;
+  for(let r = 0; r < gridRows; r++){
+    for(let c = 0; c < gridCols; c++){
+      const cGeo = new THREE.PlaneGeometry(gcH, gcW);
+      const cMat = new THREE.MeshBasicMaterial({
+        color: (r + c) % 2 === 0 ? 0x111111 : 0xffffff,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -1
+      });
+      const cm = new THREE.Mesh(cGeo, cMat);
+      cm.rotation.x = -Math.PI / 2;
+      cm.position.set(
+        p.x - gcH/2 + r * gcH,
+        0.08,
+        p.z - TW/2 + (c + 0.5) * gcW
+      );
+      scene.add(cm);
+    }
+  }
+
+}
+
+// Trees along the outside of the track
+function createTree(x, z){
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.8, 5, 8),
+    new THREE.MeshLambertMaterial({ color: 0x8B4513 })
+  );
+  trunk.position.set(x, 2.5, z);
+  trunk.castShadow = true;
+  scene.add(trunk);
+  const leaves = new THREE.Mesh(
+    new THREE.SphereGeometry(3, 8, 8),
+    new THREE.MeshLambertMaterial({ color: 0x228B22 })
+  );
+  leaves.position.set(x, 6.5, z);
+  leaves.castShadow = true;
+  scene.add(leaves);
+}
+for(let i = 0; i < 30; i++){
+  const d = (i / 30) * L_TOTAL;
+  const p = getTrackPoint(d, TW/2 + 15 + Math.random() * 15);
+  createTree(p.x, p.z);
+  if(i % 2 === 0){
+    const p2 = getTrackPoint(d, -(TW/2 + 12 + Math.random() * 10));
+    createTree(p2.x, p2.z);
+  }
+}
+
+// Grandstand on the bottom straight
+{
+  const standGeo = new THREE.BoxGeometry(60, 8, 8);
+  const standMat = new THREE.MeshLambertMaterial({ color: 0x8888aa });
+  const stand = new THREE.Mesh(standGeo, standMat);
+  stand.position.set(0, 4, TR + TW/2 + 20);
+  stand.castShadow = true;
+  scene.add(stand);
+  // Roof
+  const roofGeo = new THREE.BoxGeometry(64, 0.5, 12);
+  const roofMat = new THREE.MeshLambertMaterial({ color: 0x555577 });
+  const roof = new THREE.Mesh(roofGeo, roofMat);
+  roof.position.set(0, 9, TR + TW/2 + 20);
+  scene.add(roof);
+}
+
+// ═══════════════════════════════════════════════
+// CAR BUILDER
+// ═══════════════════════════════════════════════
+function createCar(color, name){
+  const group = new THREE.Group();
+  const bodyGeo = new THREE.BoxGeometry(3.5, 1.4, 7);
+  const bodyMat = new THREE.MeshLambertMaterial({ color });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 1.2;
+  body.castShadow = true;
+  group.add(body);
+
+  const topGeo = new THREE.BoxGeometry(3, 0.9, 3.5);
+  const topMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+  const top = new THREE.Mesh(topGeo, topMat);
+  top.position.set(0, 2.2, -0.3);
+  group.add(top);
+
+  // Headlights
+  const hlGeo = new THREE.SphereGeometry(0.3, 8, 8);
+  const hlMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
+  [-1.2, 1.2].forEach(x => {
+    const hl = new THREE.Mesh(hlGeo, hlMat);
+    hl.position.set(x, 1, 3.5);
+    group.add(hl);
+  });
+  // Tail lights
+  const tlMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+  [-1.2, 1.2].forEach(x => {
+    const tl = new THREE.Mesh(hlGeo, tlMat);
+    tl.position.set(x, 1, -3.5);
+    group.add(tl);
+  });
+  // Wheels
+  function addWheel(x, z){
+    const w = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.7, 0.7, 0.8, 16),
+      new THREE.MeshLambertMaterial({ color: 0x111111 })
+    );
+    w.rotation.z = Math.PI / 2;
+    w.position.set(x, 0.7, z);
+    group.add(w);
+  }
+  addWheel(-2, 2.2); addWheel(2, 2.2);
+  addWheel(-2, -2.2); addWheel(2, -2.2);
+
+  group.userData = {
+    name, speed: 0, laps: 0, cpIdx: 1,  // cpIdx=1: 起點在 CP0 之後，已算過 CP0
+    bestLap: null, lapStart: 0, finished: false, rank: 0
+  };
+  return group;
+}
+
+// ═══════════════════════════════════════════════
+// SPAWN CARS — all on start/finish line
+// ═══════════════════════════════════════════════
+const allCars = [];
+const START_DIST = HL - 10; // behind the start/finish line
+
+// Player (pole position, middle lane)
+const playerCar = createCar(0xcc0000, 'Player');
+playerCar.userData.isPlayer = true;
+playerCar.userData.lane = 1; // 第2車道
+playerCar.userData._dist = START_DIST;
+playerCar.userData._lateralOffset = LANE_OFFSETS[1];
+playerCar.userData._speed = 0;
+playerCar.userData._drifting = false;
+playerCar.userData._driftCharge = 0;
+playerCar.userData._driftBoost = 0;
+playerCar.userData._speedBoost = 0;
+playerCar.userData._prevDist = START_DIST;
+playerCar.userData._prevLapCount = 0;
+{
+  const p = getTrackPoint(START_DIST, LANE_OFFSETS[1]);
+  playerCar.position.set(p.x, 0, p.z);
+  playerCar.rotation.y = headingToRotY(p.heading);
+}
+scene.add(playerCar);
+allCars.push(playerCar);
+
+// FP camera attached to player
+fpCamera.position.set(0, 2.5, -1);
+fpCamera.lookAt(0, 2.5, 10);
+playerCar.add(fpCamera);
+
+// AI cars — same start line, different lanes
+const AI_CONFIG = [
+  { name: '小紅', color: 0xff6600, lane: 0, speed: 85 + Math.random() * 18, jitter: 0.25, mistakeRate: 0.0008 },
+  { name: '閃電', color: 0x0088ff, lane: 2, speed: 85 + Math.random() * 18, jitter: 0.15, mistakeRate: 0.0003 },
+  { name: '旋風', color: 0xaa00ff, lane: 3, speed: 85 + Math.random() * 18, jitter: 0.35, mistakeRate: 0.0012 },
+];
+AI_CONFIG.forEach(ai => {
+  const car = createCar(ai.color, ai.name);
+  car.userData.isAI = true;
+  car.userData.aiLane = ai.lane;
+  car.userData.aiSpeed = ai.speed;
+  car.userData.aiOriginalLane = ai.lane;
+  car.userData._jitterAmt = ai.jitter || 0.15;
+  car.userData._mistakeRate = ai.mistakeRate || 0.0003;
+  car.userData.aiDist = START_DIST;
+  car.userData._prevDist = car.userData.aiDist;
+  const p = getTrackPoint(car.userData.aiDist, LANE_OFFSETS[ai.lane]);
+  car.position.set(p.x, 0, p.z);
+  car.rotation.y = headingToRotY(p.heading);
+  scene.add(car);
+  allCars.push(car);
+});
+
+// ═══════════════════════════════════════════════
+// INPUT
+// ═══════════════════════════════════════════════
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if(e.code==='KeyV'){
+    if(resultShown) { hideResults(); resetRace(); }
+    else cycleView();
+  }
+  if(e.code==='KeyR') { hideResults(); resetRace(); }
+});
+addEventListener('keyup', e => keys[e.code] = false);
+
+// Pico W WebSocket
+const pico = { jx:0, jy:0, a:0, prevB:0, connected:false };
+function connectPico(){
+  const host = location.hostname || 'localhost';
+  const ws = new WebSocket('ws://'+host+':8765');
+  ws.onopen = () => {
+    pico.connected = true;
+    document.getElementById('picoStatus').className = 'pico-on';
+    document.getElementById('picoStatus').textContent = 'Pico W: 已連線';
+  };
+  ws.onclose = () => {
+    pico.connected = false;
+    document.getElementById('picoStatus').className = 'pico-off';
+    document.getElementById('picoStatus').textContent = 'Pico W: 未連線';
+    setTimeout(connectPico, 2000);
+  };
+  ws.onerror = () => ws.close();
+  ws.onmessage = e => {
+    try {
+      const d = JSON.parse(e.data);
+      pico.jx = d.jx || 0;
+      pico.jy = d.jy || 0;
+      pico.a = d.a || 0;
+      const newB = d.b || 0;
+      if(newB && !pico.prevB){
+        if(resultShown) { hideResults(); resetRace(); }
+        else cycleView();
+      }
+      pico.prevB = newB;
+      pico.connected = true;
+    } catch(err){}
+  };
+}
+connectPico();
+
+// ═══════════════════════════════════════════════
+// RACE STATE & CHECKPOINTS
+// ═══════════════════════════════════════════════
+let raceRunning = false;
+let raceTime = 0;
+
+const CP_COUNT = 4;
+const CP_DISTS = [];
+for(let i = 0; i < CP_COUNT; i++) CP_DISTS.push((i / CP_COUNT) * L_TOTAL);
+
+function checkCheckpoints(car){
+  const ud = car.userData;
+  const dist = ud._dist !== undefined ? ud._dist : (ud.aiDist || 0);
+  const norm = ((dist % L_TOTAL) + L_TOTAL) % L_TOTAL;
+  const prevNorm = ((ud._prevDist % L_TOTAL) + L_TOTAL) % L_TOTAL;
+
+  // ── 方向偵測：只有往前跑才能觸發檢查點 ──
+  let delta = norm - prevNorm;
+  if(delta < -L_TOTAL * 0.5) delta += L_TOTAL;   // 正向跨越 0 點
+  if(delta > L_TOTAL * 0.5)  delta -= L_TOTAL;   // 反向跨越 0 點
+  // 必須實際往前移動至少 0.5 單位（防止浮點漂移誤觸發）
+  if(delta < 0.5){
+    ud._prevDist = dist;
+    return;
+  }
+
+  const cpIdx = ud.cpIdx % CP_COUNT;
+  const cpDist = CP_DISTS[cpIdx];
+
+  // 因為已確認 delta > 0（往前），用 sweep 檢測是否跨過 checkpoint
+  let crossed = false;
+  if(norm >= prevNorm){
+    // 正常前進（沒跨越 0 點）
+    crossed = prevNorm < cpDist && norm >= cpDist;
+  } else {
+    // 前進且跨越了賽道 0 點（例如 700 → 30）
+    crossed = prevNorm < cpDist || norm >= cpDist;
+  }
+
+  if(crossed){
+    ud.cpIdx++;
+    if(ud.cpIdx > 0 && ud.cpIdx % CP_COUNT === 0){
+      ud.laps++;
+      const lapTime = raceTime - ud.lapStart;
+      // Lightspeed laps don't count for best lap record (that's cheating!)
+      if(!lightspeedActive){
+        if(ud.bestLap === null || lapTime < ud.bestLap) ud.bestLap = lapTime;
+      }
+      ud.lapStart = raceTime;
+      if(ud.laps >= TOTAL_LAPS && !ud.finished){
+        ud.finished = true;
+        ud.finishTime = raceTime;
+        ud.rank = allCars.filter(c => c.userData.finished).length;
+        // Position bonus for player
+        if(ud.isPlayer){
+          const posBonus = [500, 300, 150, 50][ud.rank - 1] || 0;
+          addScore(posBonus);
+          showPowerUpMsg('🏁 第 ' + ud.rank + ' 名完賽！+' + posBonus);
+        }
+      }
+    }
+  }
+  ud._prevDist = dist;
+}
+
+// ═══════════════════════════════════════════════
+// CHECKERED FLAG (canvas drawing)
+// ═══════════════════════════════════════════════
+function drawCheckeredFlag(){
+  const cv = document.getElementById('flagCanvas');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Flag pole
+  ctx.fillStyle = '#888';
+  ctx.fillRect(10, 0, 6, H);
+  ctx.fillStyle = '#666';
+  ctx.fillRect(10, 0, 3, H);
+
+  // Flag body (waving shape)
+  const flagX = 20, flagY = 8, flagW = 130, flagH = 80;
+  const cols = 6, rows = 4;
+  const cw = flagW / cols, ch = flagH / rows;
+
+  // Draw checker pattern
+  for(let r = 0; r < rows; r++){
+    for(let c = 0; c < cols; c++){
+      const isBlack = (r + c) % 2 === 0;
+      ctx.fillStyle = isBlack ? '#111' : '#fff';
+      ctx.fillRect(flagX + c * cw, flagY + r * ch, cw + 0.5, ch + 0.5);
+    }
+  }
+
+  // Flag border
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(flagX, flagY, flagW, flagH);
+
+  // Pole cap
+  ctx.fillStyle = '#c0a000';
+  ctx.beginPath();
+  ctx.arc(13, 4, 6, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ═══════════════════════════════════════════════
+// COUNTDOWN
+// ═══════════════════════════════════════════════
+function playBeep(freq, duration){
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.type = 'sine';
+  o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  g.gain.setValueAtTime(0.25, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+  o.start(); o.stop(audioCtx.currentTime + duration);
+}
+
+function startCountdown(){
+  const el = document.getElementById('cdNum');
+  const flagEl = document.getElementById('flagWrap');
+
+  // Draw and show flag
+  drawCheckeredFlag();
+  flagEl.classList.add('show', 'swing');
+  flagEl.classList.remove('slam');
+
+  let n = 3;
+  function step(){
+    el.textContent = n === 0 ? 'GO!' : n;
+    el.classList.add('show');
+    el.style.transform = 'scale(1.3)';
+    setTimeout(() => { el.style.transform = 'scale(1)'; }, 100);
+
+    if(n === 0){
+      // GO! — flag slams down, high-pitch beep
+      el.style.color = 'rgba(0,255,100,0.95)';
+      el.style.textShadow = '0 0 60px rgba(0,255,100,0.6)';
+      playBeep(1200, 0.6);
+      flagEl.classList.remove('swing');
+      flagEl.classList.add('slam');
+      setTimeout(() => {
+        el.classList.remove('show');
+        el.style.color = '';
+        el.style.textShadow = '';
+      }, 600);
+      setTimeout(() => { flagEl.classList.remove('show', 'slam'); }, 1200);
+      raceRunning = true;
+    } else {
+      // 3, 2, 1 — short beep
+      playBeep(600, 0.15);
+      n--;
+      setTimeout(step, 1000);
+    }
+  }
+  step();
+}
+setTimeout(startCountdown, 500);
+
+// ═══════════════════════════════════════════════
+// RESET
+// ═══════════════════════════════════════════════
+function resetRace(){
+  raceRunning = false;
+  raceTime = 0;
+  resultShown = false;
+  playerScore = 0;
+  lightspeedActive = false;
+  lightspeedTimer = 0;
+  powerUpSpawnTimer = 0;
+  document.getElementById('hScore').textContent = '0';
+  document.getElementById('lightspeedOverlay').classList.remove('active');
+  document.getElementById('lightspeedTimer').style.opacity = '0';
+  scene.fog = new THREE.Fog(0x87ceeb, 150, 500);
+  scene.background = new THREE.Color(0x87ceeb);
+  hideResults();
+  document.getElementById('flagWrap').classList.remove('show', 'swing', 'slam');
+
+  // Clear power-up items
+  powerUpItems.forEach(item => {
+    scene.remove(item);
+    item.children.forEach(c => { c.geometry.dispose(); c.material.dispose(); });
+  });
+  powerUpItems.length = 0;
+
+  // Clear oil slicks
+  oilSlicks.forEach(s => { scene.remove(s); s.geometry.dispose(); s.material.dispose(); });
+  oilSlicks.length = 0;
+
+  // Clear speed lines
+  speedLines.forEach(l => { scene.remove(l); l.geometry.dispose(); l.material.dispose(); });
+  speedLines.length = 0;
+
+  // Clear confetti
+  confettiPieces.forEach(p => { scene.remove(p); p.geometry.dispose(); p.material.dispose(); });
+  confettiPieces.length = 0;
+
+  // Clear explosion particles
+  if(window._explosionParts){
+    window._explosionParts.forEach(p => { scene.remove(p); p.geometry.dispose(); p.material.dispose(); });
+    window._explosionParts.length = 0;
+  }
+
+  allCars.forEach(car => {
+    const ud = car.userData;
+    const lane = ud.lane !== undefined ? ud.lane : (ud.aiLane !== undefined ? ud.aiLane : 1);
+    const lo = LANE_OFFSETS[lane];
+    const startD = START_DIST;
+    const p = getTrackPoint(startD, lo);
+    car.position.set(p.x, 0, p.z);
+    car.rotation.y = headingToRotY(p.heading);
+    ud.speed = 0;
+    ud.laps = 0;
+    ud.cpIdx = 1;  // 起點在 CP0 之後，已算過 CP0
+    ud.bestLap = null;
+    ud.lapStart = 0;
+    ud.finished = false;
+    ud.rank = 0;
+    ud._prevDist = startD;
+    ud._prevLapCount = 0;
+    ud._stunTimer = 0;
+    if(ud._stars) ud._stars.forEach(s => { s.mesh.visible = false; });
+    if(ud.isPlayer){
+      ud._dist = startD;
+      ud._lateralOffset = lo;
+      ud._speed = 0;
+      ud._speedBoost = 0;
+      ud._drifting = false;
+      ud._driftCharge = 0;
+      ud._driftBoost = 0;
+      if(ud._particles){
+        ud._particles.forEach(p => { scene.remove(p); p.geometry.dispose(); p.material.dispose(); });
+        ud._particles = [];
+      }
+    }
+    if(ud.isAI){
+      ud.aiDist = startD;
+      ud.aiLane = ud.aiOriginalLane;
+      ud._speedJitter = 0;
+      ud._jitterTimer = 0;
+      ud._laneTimer = 3 + Math.random() * 5;
+      ud._mistakeTimer = 0;
+      ud._aiBoostTimer = 0;
+      // Re-position with original lane
+      const aiP = getTrackPoint(startD, LANE_OFFSETS[ud.aiLane]);
+      car.position.set(aiP.x, 0, aiP.z);
+      car.rotation.y = headingToRotY(aiP.heading);
+    }
+  });
+
+  // Spawn fresh power-ups
+  spawnInitialPowerUps();
+  setTimeout(startCountdown, 300);
+}
+
+// ═══════════════════════════════════════════════
+// MINIMAP
+// ═══════════════════════════════════════════════
+const mapCv = document.getElementById('minimap');
+const mapCtx = mapCv.getContext('2d');
+
+function drawMinimap(){
+  const W = mapCv.width, H = mapCv.height;
+  mapCtx.clearRect(0, 0, W, H);
+
+  const maxX = HL + TR + TW/2 + 10;
+  const maxZ = TR + TW/2 + 10;
+  const scale = Math.min(W / (2 * maxX), H / (2 * maxZ)) * 0.9;
+  const cx = W/2, cy = H/2;
+
+  // Track center line
+  mapCtx.strokeStyle = '#555';
+  mapCtx.lineWidth = TW * scale;
+  mapCtx.beginPath();
+  for(let i = 0; i <= 200; i++){
+    const d = (i / 200) * L_TOTAL;
+    const p = getTrackPoint(d, 0);
+    const mx = cx + p.x * scale;
+    const my = cy + p.z * scale;
+    if(i === 0) mapCtx.moveTo(mx, my);
+    else mapCtx.lineTo(mx, my);
+  }
+  mapCtx.closePath();
+  mapCtx.stroke();
+
+  // Lane dividers
+  mapCtx.strokeStyle = '#777';
+  mapCtx.lineWidth = 0.5;
+  mapCtx.setLineDash([2, 2]);
+  for(let lane = 1; lane < LANE_COUNT; lane++){
+    const lo = LANE_OFFSETS[lane] - LANE_W/2;
+    mapCtx.beginPath();
+    for(let i = 0; i <= 200; i++){
+      const d = (i / 200) * L_TOTAL;
+      const p = getTrackPoint(d, lo);
+      const mx = cx + p.x * scale;
+      const my = cy + p.z * scale;
+      if(i === 0) mapCtx.moveTo(mx, my);
+      else mapCtx.lineTo(mx, my);
+    }
+    mapCtx.closePath();
+    mapCtx.stroke();
+  }
+  mapCtx.setLineDash([]);
+
+  // Cars
+  allCars.forEach(car => {
+    const mx = cx + car.position.x * scale;
+    const my = cy + car.position.z * scale;
+    const color = '#' + car.children[0].material.color.getHexString();
+    mapCtx.fillStyle = color;
+    mapCtx.beginPath();
+    mapCtx.arc(mx, my, car.userData.isPlayer ? 5 : 3, 0, Math.PI*2);
+    mapCtx.fill();
+    if(car.userData.isPlayer){
+      mapCtx.strokeStyle = '#ff0';
+      mapCtx.lineWidth = 2;
+      mapCtx.stroke();
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════
+// SCORING & POWER-UP SYSTEM
+// ═══════════════════════════════════════════════
+let playerScore = 0;
+let lightspeedActive = false;
+let lightspeedTimer = 0;
+const LIGHTSPEED_DURATION = 6; // seconds
+const LIGHTSPEED_SPEED = 400; // insane speed
+const LIGHTSPEED_AI_MULT = 0.08; // AI moves at 8% speed (nearly frozen)
+
+// Power-up types
+// Normal pool (common items)
+const POWERUP_NORMAL = [
+  { id: 'speed',      name: '加速火箭',   color: 0xff4400, emoji: '🚀', score: 50 },
+  { id: 'oil',        name: '機油陷阱',   color: 0x333300, emoji: '🛢️', score: 30 },
+  { id: 'coin',       name: '金幣',       color: 0xffd700, emoji: '🪙', score: 25 },
+  { id: 'coin',       name: '金幣',       color: 0xffd700, emoji: '🪙', score: 25 },
+];
+// Legendary (rare, ~8% chance, spawns separately)
+const POWERUP_LEGENDARY = { id: 'lightspeed', name: '光速模式', color: 0x00ccff, emoji: '⚡', score: 100 };
+const POWERUP_TYPES = [...POWERUP_NORMAL, POWERUP_LEGENDARY];
+
+// Active power-up items on track
+const powerUpItems = [];
+const oilSlicks = []; // dropped oil slicks on track
+
+// Sound effects (Web Audio API)
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playPickupSound(){
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.type = 'sine'; o.frequency.setValueAtTime(880, audioCtx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(1760, audioCtx.currentTime + 0.1);
+  g.gain.setValueAtTime(0.3, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+  o.start(); o.stop(audioCtx.currentTime + 0.2);
+}
+function playLightspeedSound(){
+  // Dramatic whoosh + rising tone
+  const o1 = audioCtx.createOscillator();
+  const o2 = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o1.connect(g); o2.connect(g); g.connect(audioCtx.destination);
+  o1.type = 'sawtooth'; o1.frequency.setValueAtTime(200, audioCtx.currentTime);
+  o1.frequency.exponentialRampToValueAtTime(2000, audioCtx.currentTime + 0.5);
+  o2.type = 'sine'; o2.frequency.setValueAtTime(400, audioCtx.currentTime);
+  o2.frequency.exponentialRampToValueAtTime(3000, audioCtx.currentTime + 0.6);
+  g.gain.setValueAtTime(0.25, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
+  o1.start(); o2.start();
+  o1.stop(audioCtx.currentTime + 0.8); o2.stop(audioCtx.currentTime + 0.8);
+}
+function playOilSound(){
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.type = 'square'; o.frequency.setValueAtTime(120, audioCtx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.3);
+  g.gain.setValueAtTime(0.2, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+  o.start(); o.stop(audioCtx.currentTime + 0.3);
+}
+
+function showPowerUpMsg(text){
+  const el = document.getElementById('powerUpMsg');
+  el.textContent = text;
+  el.style.opacity = '1';
+  clearTimeout(el._timeout);
+  el._timeout = setTimeout(() => { el.style.opacity = '0'; }, 1500);
+}
+
+function addScore(pts){
+  playerScore += pts;
+  document.getElementById('hScore').textContent = playerScore;
+}
+
+// ═══════════════════════════════════════════════
+// HISTORY LEADERBOARD (localStorage)
+// ═══════════════════════════════════════════════
+const HISTORY_KEY = 'pico_race_history';
+function loadHistory(){
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+  catch(e){ return []; }
+}
+function saveHistory(history){
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 10)));
+}
+function addToHistory(score, rank, bestLap, totalTime){
+  const history = loadHistory();
+  history.push({ score, rank, bestLap, totalTime, date: Date.now() });
+  history.sort((a, b) => b.score - a.score); // highest score first
+  saveHistory(history);
+  renderHistory();
+}
+function renderHistory(){
+  const history = loadHistory();
+  const container = document.getElementById('historyRows');
+  if(history.length === 0){
+    container.innerHTML = '<div class="h-row" style="color:#666">尚無紀錄</div>';
+    return;
+  }
+  const medals = ['🥇','🥈','🥉'];
+  container.innerHTML = history.slice(0, 8).map((h, i) => {
+    const best = h.bestLap ? h.bestLap.toFixed(1) + 's' : '--';
+    const posText = h.rank === 1 ? '冠軍' : 'P' + h.rank;
+    const isBest = i === 0;
+    return '<div class="h-row' + (isBest ? ' best' : '') + '">' +
+      '<span class="h-rank">' + (medals[i] || (i+1)) + '</span>' +
+      '<span class="h-score">' + h.score + '分</span>' +
+      '<span class="h-pos">' + posText + '</span>' +
+      '<span>' + best + '</span>' +
+    '</div>';
+  }).join('');
+}
+renderHistory(); // show on load
+
+// ═══════════════════════════════════════════════
+// STUN SYSTEM (spinning stars above car)
+// ═══════════════════════════════════════════════
+function stunCar(car, duration){
+  const ud = car.userData;
+  if(ud._stunTimer > 0) return; // already stunned
+  ud._stunTimer = duration || 2.5;
+  ud._stunSpin = 0;
+
+  // Create orbiting stars
+  if(!ud._stars){
+    ud._stars = [];
+    const starCount = 5;
+    for(let i = 0; i < starCount; i++){
+      const starGeo = new THREE.OctahedronGeometry(0.5);
+      const starMat = new THREE.MeshBasicMaterial({ color: 0xFFD700 });
+      const star = new THREE.Mesh(starGeo, starMat);
+      car.add(star);
+      ud._stars.push({ mesh: star, angle: (i / starCount) * Math.PI * 2 });
+    }
+  }
+  ud._stars.forEach(s => { s.mesh.visible = true; });
+}
+
+function updateStun(car, dt){
+  const ud = car.userData;
+  if(!ud._stunTimer || ud._stunTimer <= 0) return false;
+
+  ud._stunTimer -= dt;
+  ud._stunSpin += 8 * dt;
+
+  // Spin the car
+  car.rotation.y += 8 * dt;
+
+  // Orbit stars
+  if(ud._stars){
+    const radius = 3;
+    ud._stars.forEach(s => {
+      s.angle += 5 * dt;
+      s.mesh.position.set(
+        Math.cos(s.angle) * radius,
+        4 + Math.sin(s.angle * 2) * 0.5,
+        Math.sin(s.angle) * radius
+      );
+      s.mesh.rotation.y += 10 * dt;
+    });
+  }
+
+  if(ud._stunTimer <= 0){
+    ud._stunTimer = 0;
+    // Hide stars
+    if(ud._stars) ud._stars.forEach(s => { s.mesh.visible = false; });
+  }
+  return ud._stunTimer > 0;
+}
+
+// Explosion particles at a position
+function spawnExplosion(pos){
+  const colors = [0xFF4400, 0xFFAA00, 0xFF0000, 0xFFFF00, 0x333333];
+  for(let i = 0; i < 20; i++){
+    const geo = new THREE.SphereGeometry(0.3 + Math.random() * 0.5);
+    const mat = new THREE.MeshBasicMaterial({
+      color: colors[Math.floor(Math.random() * colors.length)],
+      transparent: true, opacity: 0.9
+    });
+    const p = new THREE.Mesh(geo, mat);
+    p.position.set(pos.x + (Math.random()-0.5)*2, pos.y + 2, pos.z + (Math.random()-0.5)*2);
+    p.userData = {
+      vx: (Math.random()-0.5) * 15,
+      vy: 5 + Math.random() * 10,
+      vz: (Math.random()-0.5) * 15,
+      life: 1.0 + Math.random() * 0.5
+    };
+    scene.add(p);
+    if(!window._explosionParts) window._explosionParts = [];
+    window._explosionParts.push(p);
+  }
+}
+function updateExplosions(dt){
+  if(!window._explosionParts) return;
+  for(let i = window._explosionParts.length - 1; i >= 0; i--){
+    const p = window._explosionParts[i];
+    const u = p.userData;
+    u.vy -= 15 * dt;
+    p.position.x += u.vx * dt;
+    p.position.y += u.vy * dt;
+    p.position.z += u.vz * dt;
+    u.life -= dt * 1.5;
+    p.material.opacity = Math.max(0, u.life);
+    if(u.life <= 0){
+      scene.remove(p); p.geometry.dispose(); p.material.dispose();
+      window._explosionParts.splice(i, 1);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════
+// GRASS DETECTION (off-track = slow)
+// ═══════════════════════════════════════════════
+function isOnTrack(worldX, worldZ){
+  // Check if point is within track bounds by sampling nearest track point
+  // Find closest distance on track
+  let minDist = Infinity;
+  for(let s = 0; s < 64; s++){
+    const d = (s / 64) * L_TOTAL;
+    const p = getTrackPoint(d, 0);
+    const dx = worldX - p.x, dz = worldZ - p.z;
+    const dist = dx*dx + dz*dz;
+    if(dist < minDist) minDist = dist;
+  }
+  // If far from center, check lateral distance more carefully
+  // Simple approach: check if within TW/2 of any track centerline point
+  const halfTW = TW / 2 + 2; // small margin
+  return minDist < (halfTW + TR) * (halfTW + TR); // rough check
+}
+// More precise: use track-relative coordinates
+function getTrackLateralDist(worldX, worldZ){
+  let bestLateral = Infinity;
+  for(let s = 0; s < 128; s++){
+    const d = (s / 128) * L_TOTAL;
+    const p = getTrackPoint(d, 0);
+    const dx = worldX - p.x, dz = worldZ - p.z;
+    const dist = Math.sqrt(dx*dx + dz*dz);
+    if(dist < Math.abs(bestLateral)) bestLateral = dist;
+  }
+  return bestLateral;
+}
+function isOffTrack(lateralOffset){
+  return Math.abs(lateralOffset) > TW/2 + 1;
+}
+
+// Spawn a power-up item at a random track position
+function spawnPowerUp(forceLegendary){
+  let type;
+  if(forceLegendary){
+    type = POWERUP_LEGENDARY;
+  } else {
+    type = POWERUP_NORMAL[Math.floor(Math.random() * POWERUP_NORMAL.length)];
+  }
+
+  const dist = Math.random() * L_TOTAL;
+  let laneIdx;
+  if(type.id === 'lightspeed'){
+    // Lightspeed always on edge lanes (harder to reach)
+    laneIdx = Math.random() < 0.5 ? 0 : LANE_COUNT - 1;
+  } else {
+    laneIdx = Math.floor(Math.random() * LANE_COUNT);
+  }
+  const lo = LANE_OFFSETS[laneIdx];
+  const p = getTrackPoint(dist, lo);
+
+  const group = new THREE.Group();
+  const isLegendary = type.id === 'lightspeed';
+  // Glowing sphere (legendary = bigger + brighter)
+  const radius = isLegendary ? 2.8 : 2.0;
+  const geo = new THREE.SphereGeometry(radius, 16, 16);
+  const mat = new THREE.MeshBasicMaterial({
+    color: type.color, transparent: true, opacity: isLegendary ? 0.95 : 0.85
+  });
+  const sphere = new THREE.Mesh(geo, mat);
+  group.add(sphere);
+  // Inner glow
+  const innerGeo = new THREE.SphereGeometry(radius * 0.6, 12, 12);
+  const innerMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: isLegendary ? 0.7 : 0.5
+  });
+  group.add(new THREE.Mesh(innerGeo, innerMat));
+  // Legendary: add orbiting ring
+  if(isLegendary){
+    const ringGeo = new THREE.TorusGeometry(3.5, 0.3, 8, 32);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x00ccff, transparent: true, opacity: 0.6
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI / 2;
+    group.add(ring);
+  }
+
+  group.position.set(p.x, 3, p.z);
+  group.userData = { type, dist, lo, laneIdx, age: 0, isLegendary };
+  scene.add(group);
+  powerUpItems.push(group);
+}
+
+let legendarySpawnTimer = 0;
+
+// Spawn initial power-ups (no lightspeed at start)
+function spawnInitialPowerUps(){
+  for(let i = 0; i < 8; i++) spawnPowerUp(false);
+  legendarySpawnTimer = 0;
+}
+
+// Create oil slick on track
+function dropOilSlick(dist, lo){
+  const p = getTrackPoint(dist, lo);
+  const geo = new THREE.CylinderGeometry(4, 4, 0.15, 16);
+  const mat = new THREE.MeshLambertMaterial({
+    color: 0x1a1a00, transparent: true, opacity: 0.7
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(p.x, 0.1, p.z);
+  mesh.userData = { dist, lo, life: 12 }; // lasts 12 seconds
+  scene.add(mesh);
+  oilSlicks.push(mesh);
+}
+
+// Check if car position is near a track distance+offset
+function isNearItem(carPos, itemPos, radius){
+  const dx = carPos.x - itemPos.x;
+  const dz = carPos.z - itemPos.z;
+  return (dx*dx + dz*dz) < radius * radius;
+}
+
+// ═══════════════════════════════════════════════
+// LIGHTSPEED VISUAL EFFECTS
+// ═══════════════════════════════════════════════
+const speedLines = [];
+function createSpeedLine(){
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0, -8 - Math.random() * 12)
+  ]);
+  const mat = new THREE.LineBasicMaterial({
+    color: 0x88ccff, transparent: true, opacity: 0.6
+  });
+  const line = new THREE.Line(geo, mat);
+  line.userData = { life: 0.5 + Math.random() * 0.5 };
+  return line;
+}
+
+// ═══════════════════════════════════════════════
+// CONFETTI CELEBRATION
+// ═══════════════════════════════════════════════
+let confettiPieces = [];
+function launchConfetti(){
+  const colors = [0xFFD700, 0xFF4444, 0x44FF44, 0x4488FF, 0xFF44FF, 0xFFAA00, 0x44FFFF];
+  for(let i = 0; i < 120; i++){
+    const geo = new THREE.PlaneGeometry(0.6 + Math.random()*0.8, 0.4 + Math.random()*0.5);
+    const mat = new THREE.MeshBasicMaterial({
+      color: colors[Math.floor(Math.random() * colors.length)],
+      side: THREE.DoubleSide, transparent: true, opacity: 1
+    });
+    const piece = new THREE.Mesh(geo, mat);
+    piece.position.copy(playerCar.position);
+    piece.position.y = 8 + Math.random() * 15;
+    piece.position.x += (Math.random() - 0.5) * 30;
+    piece.position.z += (Math.random() - 0.5) * 30;
+    piece.userData = {
+      vx: (Math.random() - 0.5) * 15,
+      vy: 5 + Math.random() * 10,
+      vz: (Math.random() - 0.5) * 15,
+      rotSpeed: (Math.random() - 0.5) * 10,
+      life: 4 + Math.random() * 3
+    };
+    scene.add(piece);
+    confettiPieces.push(piece);
+  }
+}
+function updateConfetti(dt){
+  for(let i = confettiPieces.length - 1; i >= 0; i--){
+    const p = confettiPieces[i];
+    const u = p.userData;
+    u.vy -= 12 * dt; // gravity
+    p.position.x += u.vx * dt;
+    p.position.y += u.vy * dt;
+    p.position.z += u.vz * dt;
+    p.rotation.x += u.rotSpeed * dt;
+    p.rotation.z += u.rotSpeed * 0.7 * dt;
+    // Flutter effect
+    u.vx += Math.sin(u.life * 5) * 2 * dt;
+    u.life -= dt;
+    if(u.life < 1) p.material.opacity = u.life;
+    if(u.life <= 0 || p.position.y < -2){
+      scene.remove(p);
+      p.geometry.dispose(); p.material.dispose();
+      confettiPieces.splice(i, 1);
+    }
+  }
+}
+
+// Celebration sound
+function playCelebrationSound(){
+  // Fanfare: rising chord
+  const notes = [523, 659, 784, 1047]; // C5, E5, G5, C6
+  notes.forEach((freq, i) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.type = 'sine';
+    o.frequency.setValueAtTime(freq, audioCtx.currentTime + i * 0.12);
+    g.gain.setValueAtTime(0, audioCtx.currentTime);
+    g.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + i * 0.12);
+    g.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + i * 0.12 + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.5);
+    o.start(audioCtx.currentTime + i * 0.12);
+    o.stop(audioCtx.currentTime + 1.5);
+  });
+}
+
+// Results & restart
+function showResults(){
+  const sorted = [...allCars].sort((a, b) => a.userData.rank - b.userData.rank);
+  const ranksDiv = document.getElementById('resultRanks');
+  ranksDiv.innerHTML = '';
+  const medals = ['🥇', '🥈', '🥉', '4️⃣'];
+  sorted.forEach((car, i) => {
+    const ud = car.userData;
+    const line = document.createElement('div');
+    line.className = 'rank-line' + (ud.isPlayer ? ' player' : '');
+    const best = ud.bestLap ? ud.bestLap.toFixed(1) + 's' : '--';
+    const finishTime = ud.finishTime ? ud.finishTime.toFixed(1) : raceTime.toFixed(1);
+    line.textContent = medals[i] + ' ' + ud.name + (ud.isPlayer ? ' (你)' : '') + '  成績: ' + finishTime + ' 秒';
+    ranksDiv.appendChild(line);
+  });
+  const statsDiv = document.getElementById('resultStats');
+  statsDiv.textContent = '總分: ' + playerScore + ' 分 | 總時間: ' + raceTime.toFixed(1) + 's';
+
+  // Save to history
+  const pud = playerCar.userData;
+  addToHistory(playerScore, pud.rank, pud.bestLap, raceTime);
+
+  document.getElementById('resultScreen').classList.add('show');
+
+  // Celebrate if player won!
+  if(playerCar.userData.rank === 1){
+    playCelebrationSound();
+    launchConfetti();
+    // Multiple waves of confetti
+    setTimeout(launchConfetti, 800);
+    setTimeout(launchConfetti, 1600);
+  }
+}
+
+function hideResults(){
+  document.getElementById('resultScreen').classList.remove('show');
+}
+
+// ═══════════════════════════════════════════════
+// GAME LOOP
+// ═══════════════════════════════════════════════
+let resultShown = false;
+let powerUpSpawnTimer = 0;
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = 1/60;
+  if(raceRunning) raceTime += dt;
+
+  const ud = playerCar.userData;
+
+  // AI time scale (affected by lightspeed)
+  const aiTimeMult = lightspeedActive ? LIGHTSPEED_AI_MULT : 1.0;
+
+  // ── POWER-UP ITEMS UPDATE ──
+  if(raceRunning){
+    // Rotate/bob power-up items
+    powerUpItems.forEach(item => {
+      item.userData.age += dt;
+      const isLeg = item.userData.isLegendary;
+      item.rotation.y += (isLeg ? 5 : 2.5) * dt;
+      item.position.y = (isLeg ? 4 : 3) + Math.sin(item.userData.age * 3) * (isLeg ? 1.5 : 0.8);
+      // Pulse scale (legendary pulses bigger)
+      const s = 1 + Math.sin(item.userData.age * (isLeg ? 8 : 5)) * (isLeg ? 0.3 : 0.15);
+      item.scale.set(s, s, s);
+    });
+
+    // Spawn new normal items periodically
+    powerUpSpawnTimer += dt;
+    if(powerUpSpawnTimer > 5 && powerUpItems.length < 10){
+      spawnPowerUp(false);
+      powerUpSpawnTimer = 0;
+    }
+    // Legendary: ~8% chance every 15 seconds, max 1 on track at a time
+    // Legendary: only spawns in first 2 laps, not near finish
+    const playerLaps = playerCar.userData.laps || 0;
+    legendarySpawnTimer += dt;
+    if(legendarySpawnTimer > 10 && playerLaps < TOTAL_LAPS - 1){
+      const hasLegendary = powerUpItems.some(i => i.userData.isLegendary);
+      if(!hasLegendary && Math.random() < 0.12){
+        spawnPowerUp(true);
+        showPowerUpMsg('⚡ 光速模式出現了！');
+      }
+      legendarySpawnTimer = 0;
+    }
+
+    // Update oil slick lifetimes
+    for(let i = oilSlicks.length - 1; i >= 0; i--){
+      oilSlicks[i].userData.life -= dt;
+      if(oilSlicks[i].userData.life <= 0){
+        scene.remove(oilSlicks[i]);
+        oilSlicks[i].geometry.dispose();
+        oilSlicks[i].material.dispose();
+        oilSlicks.splice(i, 1);
+      }
+    }
+
+    // Update lightspeed timer
+    if(lightspeedActive){
+      lightspeedTimer -= dt;
+      const timerEl = document.getElementById('lightspeedTimer');
+      timerEl.style.opacity = '1';
+      timerEl.textContent = Math.ceil(lightspeedTimer) + '';
+      if(lightspeedTimer <= 0){
+        lightspeedActive = false;
+        timerEl.style.opacity = '0';
+        document.getElementById('lightspeedOverlay').classList.remove('active');
+        scene.fog = new THREE.Fog(0x87ceeb, 150, 500);
+        scene.background = new THREE.Color(0x87ceeb);
+        showPowerUpMsg('光速結束');
+        // Clean up speed lines
+        speedLines.forEach(l => { scene.remove(l); l.geometry.dispose(); l.material.dispose(); });
+        speedLines.length = 0;
+      }
+    }
+  }
+
+  // ── PLAYER INPUT (賽道相對操控 + 甩尾) ──
+  if(raceRunning && !ud.finished){
+    let fwd = 0, lane = 0, drift = false;
+
+    // During lightspeed, auto-pilot drives!
+    if(lightspeedActive){
+      fwd = 1; // always full throttle
+      // Still allow left/right steering in lightspeed (super smooth)
+      if(keys['ArrowLeft'] || keys['KeyA']) lane = -1;
+      if(keys['ArrowRight'] || keys['KeyD']) lane = 1;
+      if(Math.abs(pico.jx) > 0.05) lane = pico.jx > 0 ? 1 : -1;
+    } else {
+      if(keys['ArrowUp'] || keys['KeyW']) fwd = 1;
+      if(keys['ArrowDown'] || keys['KeyS']) fwd = -1;
+      if(keys['ArrowLeft'] || keys['KeyA']) lane = -1;
+      if(keys['ArrowRight'] || keys['KeyD']) lane = 1;
+      if(keys['ShiftLeft'] || keys['ShiftRight'] || keys['Space']) drift = true;
+
+      // Pico W（加死區過濾，防止搖桿飄移）
+      if(Math.abs(pico.jy) > 0.05) fwd = pico.jy > 0 ? 1 : -1;
+      if(Math.abs(pico.jx) > 0.05) lane = pico.jx > 0 ? 1 : -1;
+      if(pico.a) drift = true;
+    }
+
+    // Speed control
+    const MAX_SPEED = lightspeedActive ? LIGHTSPEED_SPEED : (ud._speedBoost > 0 ? 140 : 90);
+    const ACCEL = lightspeedActive ? 600 : 80;
+    const BRAKE = 120;
+
+    if(fwd > 0) ud._speed += ACCEL * dt;
+    else if(fwd < 0) ud._speed -= BRAKE * dt;
+    else ud._speed *= 0.98;
+
+    // Oil slick check for player
+    if(!lightspeedActive && !(ud._stunTimer > 0)){
+      for(const slick of oilSlicks){
+        if(isNearItem(playerCar.position, slick.position, 5)){
+          ud._speed = 0;
+          stunCar(playerCar, 2.5);
+          spawnExplosion(playerCar.position);
+          showPowerUpMsg('🛢️ 打滑翻車！');
+          playOilSound();
+          scene.remove(slick);
+          slick.geometry.dispose(); slick.material.dispose();
+          oilSlicks.splice(oilSlicks.indexOf(slick), 1);
+          break;
+        }
+      }
+    }
+    // If stunned, car can't move
+    if(ud._stunTimer > 0){
+      updateStun(playerCar, dt);
+      ud._speed *= 0.9; // slow to stop during stun
+    }
+
+    ud._speed = Math.max(-20, Math.min(MAX_SPEED, ud._speed));
+
+    // Speed boost timer
+    if(ud._speedBoost > 0) ud._speedBoost -= dt;
+
+    // Drift system
+    const driftBar = document.getElementById('driftBar');
+    const driftFill = document.getElementById('driftFill');
+
+    if(drift && ud._speed > 20 && !lightspeedActive){
+      ud._drifting = true;
+      ud._driftCharge = Math.min(1, ud._driftCharge + 1.0 * dt);
+      ud._lateralOffset += 18 * dt;
+      ud._speed = Math.max(ud._speed, 75);
+      driftBar.style.display = 'block';
+      driftFill.style.width = (ud._driftCharge * 100) + '%';
+      driftFill.style.background = ud._driftCharge > 0.6 ? '#ff4400'
+        : ud._driftCharge > 0.3 ? '#ffaa00' : '#aaa';
+    } else {
+      if(ud._drifting && ud._driftCharge > 0.25){
+        ud._driftBoost = ud._driftCharge * 50;
+        addScore(Math.round(ud._driftCharge * 30)); // drift bonus score
+      }
+      ud._drifting = false;
+      ud._driftCharge *= 0.85;
+      if(ud._driftCharge < 0.03){
+        ud._driftCharge = 0;
+        driftBar.style.display = 'none';
+      } else {
+        driftFill.style.width = (ud._driftCharge * 100) + '%';
+      }
+    }
+
+    // Apply drift boost
+    if(ud._driftBoost > 0 && !lightspeedActive){
+      ud._speed = Math.min(144, ud._speed + ud._driftBoost * 3 * dt);
+      ud._driftBoost *= 0.96;
+      if(ud._driftBoost < 1) ud._driftBoost = 0;
+    }
+
+    // Lane switching (extra smooth during lightspeed)
+    if(lane !== 0 && !drift){
+      const laneSpeed = lightspeedActive ? 60 : 35; // faster & smoother in lightspeed
+      ud._lateralOffset += lane * laneSpeed * dt;
+    }
+    // Allow going slightly off-track (grass), but not too far
+    ud._lateralOffset = Math.max(-TW/2 - 12, Math.min(TW/2 + 12, ud._lateralOffset));
+    // Grass slowdown: if off-track, big speed penalty + push back
+    if(isOffTrack(ud._lateralOffset)){
+      ud._speed *= 0.95; // constant drag on grass
+      ud._speed = Math.min(ud._speed, 30); // grass max speed
+      // Gentle push back toward track
+      const pushDir = ud._lateralOffset > 0 ? -1 : 1;
+      ud._lateralOffset += pushDir * 8 * dt;
+    }
+    if(!drift && lane === 0 && !lightspeedActive){
+      let nearest = LANE_OFFSETS[0], nearDist = 999;
+      LANE_OFFSETS.forEach(lo => {
+        const d = Math.abs(ud._lateralOffset - lo);
+        if(d < nearDist){ nearDist = d; nearest = lo; }
+      });
+      if(nearDist > 0.5){
+        ud._lateralOffset += (nearest - ud._lateralOffset) * 2.5 * dt;
+      }
+    }
+
+    // Update distance along track
+    ud._dist += ud._speed * dt;
+
+    // ── POWER-UP COLLECTION ──
+    for(let i = powerUpItems.length - 1; i >= 0; i--){
+      const item = powerUpItems[i];
+      if(isNearItem(playerCar.position, item.position, 5)){
+        const type = item.userData.type;
+        addScore(type.score);
+        playPickupSound();
+
+        switch(type.id){
+          case 'speed':
+            ud._speedBoost = 4; // 4 seconds speed boost
+            showPowerUpMsg('🚀 加速火箭！');
+            break;
+          case 'oil':
+            // Drop oil slick behind player
+            dropOilSlick(ud._dist - 20, ud._lateralOffset);
+            showPowerUpMsg('🛢️ 放置機油陷阱！');
+            break;
+          case 'lightspeed':
+            lightspeedActive = true;
+            lightspeedTimer = LIGHTSPEED_DURATION;
+            document.getElementById('lightspeedOverlay').classList.add('active');
+            // Dramatic visual: darken scene, add blue tint
+            scene.fog = new THREE.Fog(0x001133, 50, 400);
+            scene.background = new THREE.Color(0x000822);
+            playLightspeedSound();
+            showPowerUpMsg('⚡ 光 速 模 式 ⚡');
+            break;
+          case 'coin':
+            showPowerUpMsg('🪙 +' + type.score);
+            break;
+        }
+
+        // Remove item
+        scene.remove(item);
+        item.children.forEach(c => { c.geometry.dispose(); c.material.dispose(); });
+        powerUpItems.splice(i, 1);
+      }
+    }
+
+    // Position car on track
+    const p = getTrackPoint(ud._dist, ud._lateralOffset);
+    playerCar.position.set(p.x, 0, p.z);
+
+    const baseRot = headingToRotY(p.heading);
+    const driftAngle = ud._drifting ? ud._driftCharge * 0.35 : 0;
+    playerCar.rotation.y = baseRot + driftAngle;
+
+    ud.speed = Math.abs(ud._speed);
+
+    // Lightspeed speed lines effect
+    if(lightspeedActive){
+      for(let i = 0; i < 3; i++){
+        const line = createSpeedLine();
+        const spread = 20;
+        line.position.set(
+          playerCar.position.x + (Math.random()-0.5) * spread,
+          1 + Math.random() * 6,
+          playerCar.position.z + (Math.random()-0.5) * spread
+        );
+        line.rotation.y = playerCar.rotation.y;
+        scene.add(line);
+        speedLines.push(line);
+      }
+      // Fade out old speed lines
+      for(let i = speedLines.length - 1; i >= 0; i--){
+        speedLines[i].userData.life -= dt * 2;
+        speedLines[i].material.opacity = speedLines[i].userData.life;
+        if(speedLines[i].userData.life <= 0){
+          scene.remove(speedLines[i]);
+          speedLines[i].geometry.dispose();
+          speedLines[i].material.dispose();
+          speedLines.splice(i, 1);
+        }
+      }
+    }
+
+    // Drift smoke particles
+    if(ud._drifting){
+      if(!ud._particles) ud._particles = [];
+      for(let i = 0; i < 2; i++){
+        const pGeo = new THREE.SphereGeometry(0.4 + Math.random() * 0.6);
+        const pMat = new THREE.MeshBasicMaterial({
+          color: ud._driftCharge > 0.6 ? 0xff4400 : ud._driftCharge > 0.3 ? 0xffaa00 : 0xcccccc,
+          transparent: true, opacity: 0.6
+        });
+        const particle = new THREE.Mesh(pGeo, pMat);
+        particle.position.copy(playerCar.position);
+        particle.position.y = 0.4;
+        particle.position.x += (Math.random()-0.5) * 3;
+        particle.position.z += (Math.random()-0.5) * 3;
+        particle.userData = { life: 1.0 };
+        scene.add(particle);
+        ud._particles.push(particle);
+      }
+    }
+    if(ud._particles){
+      for(let i = ud._particles.length - 1; i >= 0; i--){
+        const particle = ud._particles[i];
+        particle.userData.life -= 2.5 * dt;
+        particle.material.opacity = particle.userData.life * 0.5;
+        particle.position.y += 3 * dt;
+        particle.scale.multiplyScalar(1.02);
+        if(particle.userData.life <= 0){
+          scene.remove(particle);
+          particle.geometry.dispose();
+          particle.material.dispose();
+          ud._particles.splice(i, 1);
+        }
+      }
+    }
+
+    checkCheckpoints(playerCar);
+
+    // Lap completion bonus
+    if(ud.laps > (ud._prevLapCount || 0)){
+      addScore(200);
+      showPowerUpMsg('🏁 完成第 ' + ud.laps + ' 圈！+200');
+      ud._prevLapCount = ud.laps;
+    }
+  }
+
+  // ── AI CARS ──
+  allCars.forEach(car => {
+    const cud = car.userData;
+    if(!cud.isAI || !raceRunning || cud.finished) return;
+
+    // If stunned, just spin and wait
+    if(cud._stunTimer > 0){
+      updateStun(car, dt);
+      cud._stunTimer -= dt;
+      if(cud._stunTimer <= 0){
+        cud._stunTimer = 0;
+        if(cud._stars) cud._stars.forEach(s => { s.mesh.visible = false; });
+      }
+      return; // can't move while stunned
+    }
+
+    // AI speed affected by lightspeed mode
+    let effectiveSpeed = cud.aiSpeed * aiTimeMult;
+
+    // AI oil slick check → spin out + explosion
+    for(let i = oilSlicks.length - 1; i >= 0; i--){
+      if(isNearItem(car.position, oilSlicks[i].position, 5)){
+        stunCar(car, 3.0);
+        spawnExplosion(car.position);
+        playOilSound();
+        scene.remove(oilSlicks[i]);
+        oilSlicks[i].geometry.dispose(); oilSlicks[i].material.dispose();
+        oilSlicks.splice(i, 1);
+        addScore(80); // bonus for trapping AI!
+        showPowerUpMsg('🛢️ ' + cud.name + ' 翻車了！+80');
+        return;
+      }
+    }
+
+    // === AI 隨機行為 ===
+
+    // 1. 速度隨機波動 — 長週期狀態（好狀態 vs 壞狀態）
+    if(!cud._phaseTimer) cud._phaseTimer = 0;
+    if(!cud._phaseMult) cud._phaseMult = 1;
+    cud._phaseTimer -= dt;
+    if(cud._phaseTimer <= 0){
+      // 每 3~8 秒切換狀態：0.7（大失速）~ 1.2（超常發揮）
+      cud._phaseMult = 0.7 + Math.random() * 0.5;
+      cud._phaseTimer = 3 + Math.random() * 5;
+    }
+    effectiveSpeed *= cud._phaseMult;
+
+    // 短期抖動
+    if(!cud._jitterTimer) cud._jitterTimer = 0;
+    cud._jitterTimer -= dt;
+    if(cud._jitterTimer <= 0){
+      cud._speedJitter = (Math.random() - 0.5) * 0.3;
+      cud._jitterTimer = 0.3 + Math.random() * 1;
+    }
+    effectiveSpeed *= (1 + (cud._speedJitter || 0));
+
+    // 2. 隨機換車道（偶爾切線超車）
+    if(!cud._laneTimer) cud._laneTimer = 3 + Math.random() * 5;
+    cud._laneTimer -= dt;
+    if(cud._laneTimer <= 0){
+      // 30% 機率換車道
+      if(Math.random() < 0.3){
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        const newLane = Math.max(0, Math.min(LANE_COUNT - 1, cud.aiLane + dir));
+        cud.aiLane = newLane;
+      }
+      cud._laneTimer = 2 + Math.random() * 6;
+    }
+
+    // 3. AI 吃道具
+    for(let pi = powerUpItems.length - 1; pi >= 0; pi--){
+      const item = powerUpItems[pi];
+      if(isNearItem(car.position, item.position, 5)){
+        const type = item.userData.type;
+        // AI gets effect
+        if(type.id === 'speed'){
+          cud._aiBoostTimer = 3; // 3 sec speed boost
+        } else if(type.id === 'oil'){
+          // AI drops oil slick behind
+          dropOilSlick(cud.aiDist - 15, LANE_OFFSETS[cud.aiLane]);
+        }
+        // lightspeed: AI doesn't get it (too OP), coin: just remove
+        // Remove item
+        scene.remove(item);
+        item.children.forEach(c => { c.geometry.dispose(); c.material.dispose(); });
+        powerUpItems.splice(pi, 1);
+        break;
+      }
+    }
+
+    // AI speed boost from item
+    if(cud._aiBoostTimer > 0){
+      effectiveSpeed *= 1.3;
+      cud._aiBoostTimer -= dt;
+    }
+
+    // 4. 偶爾失誤（打滑、撞牆、猶豫）
+    if(!cud._mistakeTimer) cud._mistakeTimer = 0;
+    if(cud._mistakeTimer > 0){
+      effectiveSpeed *= 0.25; // 嚴重減速
+      cud._mistakeTimer -= dt;
+    } else if(Math.random() < (cud._mistakeRate || 0.0003)){
+      cud._mistakeTimer = 1.0 + Math.random() * 2.0; // 持續更久
+      // 有機率被撞到草地
+      if(Math.random() < 0.3){
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        cud.aiLane = Math.max(0, Math.min(LANE_COUNT-1, cud.aiLane + dir * 2));
+      }
+    }
+
+    cud.aiDist += effectiveSpeed * dt;
+    const lo = LANE_OFFSETS[cud.aiLane];
+    const p = getTrackPoint(cud.aiDist, lo);
+    car.position.set(p.x, 0, p.z);
+    car.rotation.y = headingToRotY(p.heading);
+    cud.speed = effectiveSpeed;
+
+    checkCheckpoints(car);
+  });
+
+  // ── CAR COLLISION ──
+  for(let i = 0; i < allCars.length; i++){
+    for(let j = i + 1; j < allCars.length; j++){
+      const a = allCars[i], b = allCars[j];
+      if(a.userData.finished && b.userData.finished) continue;
+      const dx = a.position.x - b.position.x;
+      const dz = a.position.z - b.position.z;
+      const dist = Math.sqrt(dx*dx + dz*dz);
+      if(dist < 5 && dist > 0.1){ // collision radius
+        // Push apart
+        const nx = dx / dist, nz = dz / dist;
+        const overlap = (5 - dist) / 2;
+        a.position.x += nx * overlap * 1.5;
+        a.position.z += nz * overlap * 1.5;
+        b.position.x -= nx * overlap * 1.5;
+        b.position.z -= nz * overlap * 1.5;
+        // Speed exchange / bump — everyone affected
+        const aUD = a.userData, bUD = b.userData;
+        if(aUD.isPlayer){
+          aUD._speed *= 0.7;
+          aUD._lateralOffset += nx * 3;
+        }
+        if(bUD.isPlayer){
+          bUD._speed *= 0.7;
+          bUD._lateralOffset -= nx * 3;
+        }
+        // AI also gets bumped and slowed
+        if(aUD.isAI){
+          aUD.aiDist -= 2; // knocked back
+          aUD._mistakeTimer = Math.max(aUD._mistakeTimer || 0, 0.8);
+          // Random chance to change lane after collision
+          const newLane = Math.max(0, Math.min(LANE_COUNT-1, aUD.aiLane + (Math.random()<0.5?1:-1)));
+          aUD.aiLane = newLane;
+        }
+        if(bUD.isAI){
+          bUD.aiDist -= 2;
+          bUD._mistakeTimer = Math.max(bUD._mistakeTimer || 0, 0.8);
+          const newLane = Math.max(0, Math.min(LANE_COUNT-1, bUD.aiLane + (Math.random()<0.5?1:-1)));
+          bUD.aiLane = newLane;
+        }
+      }
+    }
+  }
+
+  // ── EXPLOSION PARTICLES UPDATE ──
+  updateExplosions(dt);
+
+  // ── CHECK RACE END ──
+  // 只有「玩家完賽」才結束比賽，AI 全部跑完不算（玩家可能還沒開始）
+  if(raceRunning && !resultShown){
+    if(ud.finished){
+      // Give unfinished cars a rank
+      let nextRank = allCars.filter(c => c.userData.finished).length;
+      const unfinished = allCars.filter(c => !c.userData.finished);
+      unfinished.sort((a, b) => b.userData.cpIdx - a.userData.cpIdx);
+      unfinished.forEach(c => { nextRank++; c.userData.rank = nextRank; c.userData.finished = true; });
+      resultShown = true;
+      setTimeout(showResults, 1500);
+    }
+  }
+
+  // ── CAMERA ──
+  if(currentCamera === chaseCamera){
+    const camDist = lightspeedActive ? 25 : 15;
+    const camH = lightspeedActive ? 6 : 10;
+    const p = getTrackPoint(ud._dist - camDist, ud._lateralOffset);
+    const target = new THREE.Vector3(p.x, camH, p.z);
+    chaseCamera.position.lerp(target, lightspeedActive ? 0.12 : 0.06);
+    chaseCamera.lookAt(playerCar.position.x, 2, playerCar.position.z);
+  } else if(currentCamera === birdCamera){
+    birdCamera.position.set(0, 250, 0);
+    birdCamera.lookAt(playerCar.position);
+  }
+
+  // ── HUD ──
+  const kmh = Math.abs(Math.round(ud.speed * 0.8));
+  document.getElementById('speedNum').textContent = lightspeedActive ? '∞' : kmh;
+  document.getElementById('hSpeed').textContent = lightspeedActive ? '∞' : kmh;
+  const driftActive = ud._drifting;
+  const driftBoostActive = ud._driftBoost > 1;
+  document.getElementById('speedNum').style.color =
+    lightspeedActive ? '#00ccff' :
+    driftBoostActive ? '#ff4400' : driftActive ? '#ffaa00' : kmh > 60 ? '#ff3' : '#0f0';
+
+  const statusEl = document.getElementById('hStatus');
+  if(lightspeedActive){
+    statusEl.textContent = '⚡ 光速模式 ' + Math.ceil(lightspeedTimer) + 's';
+    statusEl.style.color = '#00ccff';
+  } else if(driftActive){
+    statusEl.textContent = '甩尾中 ' + Math.round(ud._driftCharge * 100) + '%';
+    statusEl.style.color = ud._driftCharge > 0.6 ? '#ff4400' : '#ffaa00';
+  } else if(driftBoostActive){
+    statusEl.textContent = '加速彈射！';
+    statusEl.style.color = '#ff4400';
+  } else if(ud._speedBoost > 0){
+    statusEl.textContent = '🚀 火箭加速 ' + Math.ceil(ud._speedBoost) + 's';
+    statusEl.style.color = '#ff4400';
+  } else if(ud._stunTimer > 0){
+    statusEl.textContent = '💫 暈眩中...';
+    statusEl.style.color = '#FFD700';
+  } else if(ud.finished){
+    statusEl.textContent = 'FINISH! #' + ud.rank;
+    statusEl.style.color = '#ffb700';
+  } else if(isOffTrack(ud._lateralOffset)){
+    statusEl.textContent = '🌿 草地減速！';
+    statusEl.style.color = '#4a4';
+  } else {
+    statusEl.textContent = 'ON TRACK';
+    statusEl.style.color = '#0f0';
+  }
+
+  // Rank
+  const sorted = [...allCars].sort((a, b) => {
+    if(a.userData.laps !== b.userData.laps) return b.userData.laps - a.userData.laps;
+    return b.userData.cpIdx - a.userData.cpIdx;
+  });
+  document.getElementById('hRank').textContent = (sorted.indexOf(playerCar) + 1) + ' / ' + allCars.length;
+  document.getElementById('lapCur').textContent = Math.min(ud.laps, TOTAL_LAPS);
+  document.getElementById('lapMax').textContent = TOTAL_LAPS;
+  // Update confetti
+  updateConfetti(dt);
+
+  drawMinimap();
+  renderer.render(scene, currentCamera);
+}
+
+// Resize
+window.addEventListener('resize', () => {
+  [chaseCamera, fpCamera, birdCamera].forEach(cam => {
+    cam.aspect = innerWidth / innerHeight;
+    cam.updateProjectionMatrix();
+  });
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+spawnInitialPowerUps();
+animate();
+</script>
+</body>
+</html>
