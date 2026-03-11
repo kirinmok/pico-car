@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>大業實中：無人機飛控模擬器</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+TC:wght@400;700&display=swap');
+
+        :root {
+            --bg: #080c14;
+            --panel: rgba(15, 23, 42, 0.92);
+            --border: rgba(56, 189, 248, 0.12);
+            --glow: rgba(56, 189, 248, 0.35);
+            --accent: #38bdf8;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --warning: #fbbf24;
+            --m1: #fbbf24;
+            --m2: #f87171;
+            --m3: #34d399;
+            --m4: #60a5fa;
+            --text: #e2e8f0;
+            --dim: #64748b;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            touch-action: none;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Noto Sans TC', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .app {
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh;
+            display: grid;
+            grid-template-rows: 3fr auto 1fr;
+            background:
+                radial-gradient(ellipse at 50% 30%, rgba(56,189,248,0.05) 0%, transparent 60%),
+                var(--bg);
+        }
+
+        /* ===== 上半部：飛行畫面 ===== */
+        .viz-zone {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: visible;
+            padding: 12px;
+            padding-top: 48px;
+        }
+
+        .hud-bar {
+            position: absolute;
+            top: env(safe-area-inset-top, 8px);
+            left: 16px; right: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            z-index: 20;
+            pointer-events: none;
+            padding-top: 8px;
+        }
+        .hud-title {
+            font-family: 'Orbitron', monospace;
+            font-size: 13px;
+            font-weight: 900;
+            letter-spacing: 3px;
+            color: var(--accent);
+            text-shadow: 0 0 16px var(--glow);
+        }
+        .hud-sub {
+            font-size: 10px;
+            color: var(--dim);
+            letter-spacing: 1px;
+            margin-top: 2px;
+        }
+
+        .grid-floor {
+            position: absolute;
+            bottom: 0; left: 50%;
+            transform: translateX(-50%) perspective(300px) rotateX(65deg);
+            width: 80%; height: 100px;
+            background:
+                repeating-linear-gradient(90deg, rgba(56,189,248,0.03) 0px, transparent 1px, transparent 30px),
+                repeating-linear-gradient(0deg, rgba(56,189,248,0.03) 0px, transparent 1px, transparent 30px);
+            pointer-events: none;
+        }
+
+        /* ===== 無人機 3D - SVG 螺旋槳 ===== */
+        .drone-stage {
+            perspective: 700px;
+            width: min(60vw, 60vh, 340px);
+            height: min(60vw, 60vh, 340px);
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .drone-body {
+            width: 85%; height: 85%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.08s ease-out;
+            margin: auto;
+        }
+
+        /* 機臂 */
+        .d-arm {
+            position: absolute;
+            background: linear-gradient(90deg, #2d3a4f, #4a5568, #2d3a4f);
+            border-radius: 5px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+        .d-arm-a {
+            width: 92%; height: 10px;
+            top: calc(50% - 5px); left: 4%;
+            transform: rotate(45deg);
+        }
+        .d-arm-b {
+            width: 10px; height: 92%;
+            left: calc(50% - 5px); top: 4%;
+            transform: rotate(45deg);
+        }
+
+        /* 飛控核心 - 小 */
+        .d-core {
+            position: absolute;
+            width: 44px; height: 44px;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1e293b;
+            border: 2px solid var(--accent);
+            border-radius: 10px;
+            display: flex; justify-content: center; align-items: center;
+            z-index: 5;
+        }
+        .d-core-label {
+            font-family: 'Orbitron', monospace;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: var(--accent);
+        }
+
+        /* 馬達座 + 螺旋槳容器 */
+        .motor-mount {
+            position: absolute;
+            width: 110px; height: 110px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .mm1 { top: -20px; left: -20px; }
+        .mm2 { top: -20px; right: -20px; }
+        .mm3 { bottom: -20px; left: -20px; }
+        .mm4 { bottom: -20px; right: -20px; }
+
+        /* 馬達標籤 */
+        .motor-tag {
+            position: absolute;
+            font-family: 'Orbitron', monospace;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            z-index: 12;
+            color: rgba(255,255,255,0.85);
+        }
+        .mm1 .motor-tag { bottom: -2px; right: -2px; }
+        .mm2 .motor-tag { bottom: -2px; left: -2px; }
+        .mm3 .motor-tag { top: -2px; right: -2px; }
+        .mm4 .motor-tag { top: -2px; left: -2px; }
+
+        /* SVG 螺旋槳 */
+        .prop-svg {
+            width: 100%; height: 100%;
+            position: absolute;
+            top: 0; left: 0;
+            z-index: 2;
+            opacity: 0;
+        }
+
+        /* CW: M1(左前), M4(右後)  —  CCW: M2(右前), M3(左後) */
+        /* 圓弧動力計 — stroke-dasharray 填滿圈 */
+        .arc-gauge {
+            position: absolute;
+            width: 100%; height: 100%;
+            top: 0; left: 0;
+            z-index: 1;
+            transform: rotate(-90deg); /* 從12點鐘方向開始填 */
+            pointer-events: none;
+        }
+        .arc-bg {
+            fill: none;
+            stroke: rgba(255,255,255,0.04);
+            stroke-width: 4;
+        }
+        .arc-fill {
+            fill: none;
+            stroke-width: 5;
+            stroke-linecap: butt;
+            stroke-dasharray: 289.03;
+            stroke-dashoffset: 289.03;
+            transition: stroke-dashoffset 0.1s ease-out;
+        }
+
+        /* 動力數值疊在馬達中心上方 */
+        .motor-pwr {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: 'Orbitron', monospace;
+            font-size: 13px;
+            font-weight: 900;
+            color: rgba(255,255,255,0.95);
+            z-index: 8;
+            pointer-events: none;
+            letter-spacing: -0.5px;
+        }
+
+        @keyframes spin-cw  { to { transform: rotate(360deg); } }
+        @keyframes spin-ccw { to { transform: rotate(-360deg); } }
+
+        .prop-cw  { animation: spin-cw  linear infinite; animation-duration: 0s; }
+        .prop-ccw { animation: spin-ccw linear infinite; animation-duration: 0s; }
+
+        .drone-glow {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 75%; height: 75%;
+            border-radius: 50%;
+            border: 1px solid transparent;
+            transition: all 0.3s;
+            pointer-events: none;
+        }
+        .drone-glow.on {
+            border-color: rgba(56,189,248,0.08);
+            box-shadow: 0 0 50px rgba(56,189,248,0.06);
+        }
+
+        /* 狀態列 */
+        .status-strip {
+            position: absolute;
+            bottom: 8px; left: 16px; right: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            z-index: 20;
+            pointer-events: none;
+        }
+        .status-text {
+            font-family: 'Orbitron', monospace;
+            font-size: 11px;
+            letter-spacing: 1px;
+            color: var(--dim);
+            text-shadow: 0 0 8px rgba(56,189,248,0.2);
+        }
+        .attitude-text {
+            font-family: 'Orbitron', monospace;
+            font-size: 9px;
+            color: var(--dim);
+            text-align: right;
+            line-height: 1.5;
+        }
+        .attitude-text span { color: var(--text); font-weight: 700; }
+
+        /* ===== 下半部：操控區 ===== */
+        /* ===== 下半部：操控區 ===== */
+        .ctrl-zone {
+            background: var(--panel);
+            border-top: 1px solid var(--border);
+            position: relative;
+            overflow: visible;
+            padding: 0 16px;
+            padding-bottom: max(8px, env(safe-area-inset-bottom));
+        }
+
+        /* Sticks + center */
+        .sticks-row {
+            display: flex;
+            justify-content: center;
+            align-items: stretch;
+            gap: min(20vw, 140px);
+            padding-top: 6px;
+        }
+        .stick-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            justify-content: flex-end;
+        }
+        /* Chinese label above black bar */
+        .stick-col .cn-label {
+            font-family: 'Orbitron', monospace;
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            white-space: nowrap;
+            line-height: 1;
+            margin-bottom: 2px;
+        }
+        .stick-col .cn-label.left { color: var(--warning); }
+        .stick-col .cn-label.right { color: var(--accent); }
+        /* English label on black bar above circle */
+        .stick-col .en-label {
+            font-family: 'Orbitron', monospace;
+            font-size: 11px;
+            letter-spacing: 2px;
+            color: var(--dim);
+            margin-bottom: 4px;
+        }
+
+        .mid-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            padding-top: 0;
+            padding-bottom: 4px;
+        }
+        .throttle-display {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+        }
+        .throttle-digital {
+            font-family: 'Orbitron', monospace;
+            font-size: 28px;
+            font-weight: 700;
+            color: #4ade80;
+            line-height: 1;
+            text-shadow: 0 0 12px rgba(74,222,128,0.4);
+            margin-bottom: 2px;
+        }
+        .throttle-gauge-wrap {
+            width: 120px;
+            height: 64px;
+            overflow: hidden;
+        }
+        .throttle-gauge {
+            width: 120px;
+            height: 68px;
+        }
+        .throttle-gauge .gauge-bg {
+            fill: none;
+            stroke: #1E293B;
+            stroke-width: 8;
+            stroke-linecap: round;
+        }
+        .throttle-gauge .gauge-fill {
+            fill: none;
+            stroke: url(#gaugeGrad);
+            stroke-width: 8;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.1s ease;
+        }
+        .throttle-gauge .gauge-needle {
+            fill: #E2E8F0;
+            transform-origin: 60px 60px;
+            transform: rotate(-90deg);
+            transition: transform 0.1s ease;
+        }
+        .throttle-gauge .gauge-center {
+            fill: #0B1120;
+            stroke: #334155;
+            stroke-width: 1;
+        }
+        .stick-base {
+            width: min(30vw, 150px);
+            height: min(30vw, 150px);
+            border-radius: 50%;
+            background: rgba(12,20,32,0.95);
+            border: 2px solid var(--border);
+            position: relative;
+            flex-shrink: 0;
+        }
+        .stick-base::before {
+            content: ''; position: absolute;
+            top: 50%; left: 10%; right: 10%; height: 1px;
+            background: rgba(255,255,255,0.05);
+        }
+        .stick-base::after {
+            content: ''; position: absolute;
+            left: 50%; top: 10%; bottom: 10%; width: 1px;
+            background: rgba(255,255,255,0.05);
+        }
+
+        /* 油門底座：上下弧線暗示方向 */
+        .stick-throttle {
+            overflow: visible;
+        }
+        .stick-throttle::before {
+            background: none !important;
+        }
+        .throttle-arc-top, .throttle-arc-btm {
+            position: absolute;
+            width: 100%; height: 100%;
+            top: 0; left: 0;
+            border-radius: 50%;
+            border: 2.5px solid transparent;
+            pointer-events: none;
+            z-index: 1;
+        }
+        .throttle-arc-top {
+            border-top-color: rgba(56,189,248,0.45);
+        }
+        .throttle-arc-btm {
+            border-bottom-color: rgba(56,189,248,0.45);
+        }
+
+        .stick-knob {
+            width: 50px; height: 50px;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: #94a3b8;
+            border: 2px solid rgba(255,255,255,0.15);
+            cursor: pointer;
+            z-index: 10;
+            transition: border-color 0.15s;
+        }
+        .stick-knob.active {
+            border-color: var(--accent);
+        }
+
+        .stick-val {
+            font-family: 'Orbitron', monospace;
+            font-size: 16px;
+            font-weight: 700;
+            text-align: center;
+            min-height: 22px;
+        }
+        .val-left { color: var(--warning); }
+        .val-right { color: var(--accent); }
+
+        /* mid-controls handled above */
+        .mid-title {
+            text-align: center;
+        }
+        .mid-title-main {
+            font-family: 'Orbitron', monospace;
+            font-size: 13px;
+            font-weight: 900;
+            letter-spacing: 3px;
+            color: var(--accent);
+            line-height: 1.4;
+        }
+        .daye-text {
+            font-size: 22px;
+            letter-spacing: 6px;
+            display: inline-block;
+            transform: scaleY(1.3);
+        }
+        .mid-title-sub {
+            font-family: 'Noto Sans TC', sans-serif;
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--dim);
+            letter-spacing: 4px;
+            margin-top: 4px;
+            transform: scaleY(1.4);
+        }
+
+        .btn-stop {
+            width: 44px; height: 44px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            transition: 0.15s;
+        }
+        .btn-stop:active { transform: scale(0.9); opacity: 0.7; }
+
+        .gyro-pill {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(30,41,59,0.8);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 8px 16px;
+        }
+        .gyro-cb {
+            width: 44px; height: 22px;
+            appearance: none; -webkit-appearance: none;
+            background: #334155;
+            border-radius: 11px;
+            cursor: pointer;
+            outline: none;
+            position: relative;
+            transition: 0.3s;
+            flex-shrink: 0;
+        }
+        .gyro-cb:checked { background: var(--success); }
+        .gyro-cb::before {
+            content: '';
+            position: absolute;
+            width: 18px; height: 18px;
+            background: white;
+            border-radius: 50%;
+            top: 2px; left: 2px;
+            transition: 0.3s;
+        }
+        .gyro-cb:checked::before { left: 24px; }
+        .gyro-lbl {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--dim);
+            cursor: pointer;
+        }
+
+        @media (max-height: 600px) {
+            .stick-base { width: min(28vw, 140px); height: min(28vw, 140px); }
+            .stick-knob { width: 48px; height: 48px; }
+            .btn-stop { width: 52px; height: 52px; }
+            .drone-stage { width: min(45vw, 240px); height: min(45vw, 240px); }
+            .motor-mount { width: 85px; height: 85px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app">
+
+    <!-- ===== 上半部：無人機 3D 飛行畫面 ===== -->
+    <div class="viz-zone">
+
+        <div class="hud-bar">
+        </div>
+
+        <div class="grid-floor"></div>
+
+        <div class="drone-stage">
+            <div class="drone-body" id="droneBody">
+                <div class="drone-glow" id="droneGlow"></div>
+                <div class="d-arm d-arm-a"></div>
+                <div class="d-arm d-arm-b"></div>
+
+                <!-- M1 左前 - CW 順時針 -->
+                <div class="motor-mount mm1">
+                    <div class="motor-tag">M1</div>
+                    <div class="motor-pwr" id="pwr1"></div>
+                    <svg class="arc-gauge" viewBox="0 0 100 100">
+                        <circle class="arc-bg" cx="50" cy="50" r="46"/>
+                        <circle class="arc-fill" id="arc1" cx="50" cy="50" r="46" stroke="var(--m1)"/>
+                    </svg>
+                    <svg class="prop-svg prop-cw" id="p1" viewBox="0 0 100 100">
+                        <ellipse cx="50" cy="28" rx="14" ry="26" fill="rgba(251,191,36,0.55)" transform="rotate(45,50,50)"/>
+                        <ellipse cx="50" cy="72" rx="14" ry="26" fill="rgba(251,191,36,0.55)" transform="rotate(45,50,50)"/>
+                    </svg>
+                </div>
+
+                <!-- M2 右前 - CCW 逆時針 -->
+                <div class="motor-mount mm2">
+                    <div class="motor-tag">M2</div>
+                    <div class="motor-pwr" id="pwr2"></div>
+                    <svg class="arc-gauge" viewBox="0 0 100 100">
+                        <circle class="arc-bg" cx="50" cy="50" r="46"/>
+                        <circle class="arc-fill" id="arc2" cx="50" cy="50" r="46" stroke="var(--m2)"/>
+                    </svg>
+                    <svg class="prop-svg prop-ccw" id="p2" viewBox="0 0 100 100">
+                        <ellipse cx="50" cy="28" rx="14" ry="26" fill="rgba(248,113,113,0.55)" transform="rotate(-45,50,50)"/>
+                        <ellipse cx="50" cy="72" rx="14" ry="26" fill="rgba(248,113,113,0.55)" transform="rotate(-45,50,50)"/>
+                    </svg>
+                </div>
+
+                <!-- M3 左後 - CCW 逆時針 -->
+                <div class="motor-mount mm3">
+                    <div class="motor-tag">M3</div>
+                    <div class="motor-pwr" id="pwr3"></div>
+                    <svg class="arc-gauge" viewBox="0 0 100 100">
+                        <circle class="arc-bg" cx="50" cy="50" r="46"/>
+                        <circle class="arc-fill" id="arc3" cx="50" cy="50" r="46" stroke="var(--m3)"/>
+                    </svg>
+                    <svg class="prop-svg prop-ccw" id="p3" viewBox="0 0 100 100">
+                        <ellipse cx="50" cy="28" rx="14" ry="26" fill="rgba(52,211,153,0.55)" transform="rotate(-45,50,50)"/>
+                        <ellipse cx="50" cy="72" rx="14" ry="26" fill="rgba(52,211,153,0.55)" transform="rotate(-45,50,50)"/>
+                    </svg>
+                </div>
+
+                <!-- M4 右後 - CW 順時針 -->
+                <div class="motor-mount mm4">
+                    <div class="motor-tag">M4</div>
+                    <div class="motor-pwr" id="pwr4"></div>
+                    <svg class="arc-gauge" viewBox="0 0 100 100">
+                        <circle class="arc-bg" cx="50" cy="50" r="46"/>
+                        <circle class="arc-fill" id="arc4" cx="50" cy="50" r="46" stroke="var(--m4)"/>
+                    </svg>
+                    <svg class="prop-svg prop-cw" id="p4" viewBox="0 0 100 100">
+                        <ellipse cx="50" cy="28" rx="14" ry="26" fill="rgba(96,165,250,0.55)" transform="rotate(45,50,50)"/>
+                        <ellipse cx="50" cy="72" rx="14" ry="26" fill="rgba(96,165,250,0.55)" transform="rotate(45,50,50)"/>
+                    </svg>
+                </div>
+
+                <div class="d-core">
+                    <span class="d-core-label">FC</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 下半部：雙搖桿操控區 ===== -->
+    <div class="ctrl-zone" id="ctrlZone">
+        <div class="sticks-row">
+            <div class="stick-col">
+                <div class="cn-label left">油門</div>
+                <div class="en-label">THROTTLE</div>
+                <div class="stick-base stick-throttle" id="areaL">
+                    <div class="throttle-arc-top"></div>
+                    <div class="throttle-arc-btm"></div>
+                    <div class="stick-knob" id="knobL"></div>
+                </div>
+            </div>
+
+            <div class="mid-controls">
+                <div class="throttle-display">
+                    <div class="throttle-digital"><span id="dispThrottle">0%</span></div>
+                    <div class="throttle-gauge-wrap">
+                        <svg class="throttle-gauge" viewBox="0 0 120 68">
+                            <defs>
+                                <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stop-color="#4ade80"/>
+                                    <stop offset="60%" stop-color="#facc15"/>
+                                    <stop offset="100%" stop-color="#f87171"/>
+                                </linearGradient>
+                            </defs>
+                            <path class="gauge-bg" d="M 12,60 A 48,48 0 0,1 108,60"/>
+                            <path class="gauge-fill" id="gaugeFill" d="M 12,60 A 48,48 0 0,1 108,60"/>
+                            <polygon class="gauge-needle" id="gaugeNeedle" points="58,60 62,60 60,16"/>
+                            <circle class="gauge-center" cx="60" cy="60" r="5"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="mid-title">
+                    <div class="mid-title-main"><span class="daye-text">DAYE</span><br>DRONE SIM</div>
+                    <div class="mid-title-sub">大業實中 飛控模擬器</div>
+                </div>
+            </div>
+
+            <div class="stick-col">
+                <div class="cn-label right">方向</div>
+                <div class="en-label">PITCH / ROLL</div>
+                <div class="stick-base" id="areaR">
+                    <div class="stick-knob" id="knobR"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom spacer -->
+    <div style="background:var(--panel);"></div>
+
+</div>
+<script>
+// ===== MULTI-TOUCH JOYSTICK =====
+function initStick(areaId, knobId, opts) {
+    const area = document.getElementById(areaId);
+    const knob = document.getElementById(knobId);
+    const state = { x: 0, y: opts.startBottom ? 1 : 0, touchId: null, active: false };
+
+    function radius() { return area.offsetWidth / 2; }
+    function knobR() { return knob.offsetWidth / 2; }
+    function posFromNorm(nx, ny) {
+        knob.style.left = `${50 + nx * 50}%`;
+        knob.style.top = `${50 + ny * 50}%`;
+    }
+    posFromNorm(0, opts.startBottom ? 1 : 0);
+
+    function begin(id, cx, cy) {
+        state.touchId = id; state.active = true;
+        knob.classList.add('active');
+        update(cx, cy);
+    }
+    function update(cx, cy) {
+        const r = area.getBoundingClientRect();
+        let dx = cx - (r.left + r.width / 2);
+        let dy = cy - (r.top + r.height / 2);
+        if (opts.lockX) dx = 0;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const maxD = radius() - knobR();
+        if (dist > maxD) { dx *= maxD / dist; dy *= maxD / dist; }
+        // 視覺位置用 radius，邏輯值用 maxD（確保推到底 = ±1.0）
+        posFromNorm(dx / radius(), dy / radius());
+        state.x = maxD > 0 ? dx / maxD : 0;
+        state.y = maxD > 0 ? dy / maxD : 0;
+    }
+    function end() {
+        state.active = false; state.touchId = null;
+        knob.classList.remove('active');
+        if (opts.springBack) { state.x = 0; state.y = 0; posFromNorm(0, 0); }
+    }
+
+    area.addEventListener('mousedown', e => { e.preventDefault(); begin(-1, e.clientX, e.clientY); });
+    window.addEventListener('mousemove', e => { if (state.active && state.touchId === -1) update(e.clientX, e.clientY); });
+    window.addEventListener('mouseup', () => { if (state.touchId === -1) end(); });
+
+    area.addEventListener('touchstart', e => {
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        begin(t.identifier, t.clientX, t.clientY);
+    }, { passive: false });
+    window.addEventListener('touchmove', e => {
+        for (const t of e.changedTouches)
+            if (t.identifier === state.touchId) { update(t.clientX, t.clientY); break; }
+    }, { passive: false });
+    window.addEventListener('touchend', e => {
+        for (const t of e.changedTouches)
+            if (t.identifier === state.touchId) { end(); break; }
+    });
+    window.addEventListener('touchcancel', e => {
+        for (const t of e.changedTouches)
+            if (t.identifier === state.touchId) { end(); break; }
+    });
+
+    state.reset = () => {
+        state.x = 0; state.y = opts.startBottom ? 1 : 0;
+        state.active = false; state.touchId = null;
+        knob.classList.remove('active');
+        posFromNorm(0, opts.startBottom ? 1 : 0);
+    };
+    return state;
+}
+
+const stickL = initStick('areaL', 'knobL', { lockX: true, springBack: false, startBottom: true });
+const stickR = initStick('areaR', 'knobR', { lockX: false, springBack: true, startBottom: false });
+
+// ===== PHYSICS =====
+const propEls = ['p1', 'p2', 'p3', 'p4'].map(id => document.getElementById(id));
+const pwrEls = ['pwr1', 'pwr2', 'pwr3', 'pwr4'].map(id => document.getElementById(id));
+const arcEls = ['arc1', 'arc2', 'arc3', 'arc4'].map(id => document.getElementById(id));
+const ARC_CIRC = 2 * Math.PI * 46; // ≈ 289.03
+
+let curRoll = 0, curPitch = 0;
+
+function tick() {
+    const throttle = Math.round(Math.max(0, Math.min(100, (1 - (stickL.y + 1) / 2) * 100)));
+    const pitch = Math.round(stickR.y * -100);
+    const roll = Math.round(stickR.x * 100);
+
+    document.getElementById('dispThrottle').textContent = throttle + '%';
+    // Update gauge
+    const ARC_LEN = 150.8; // approx half-circle arc length for r=48
+    const gaugeFill = document.getElementById('gaugeFill');
+    const gaugeNeedle = document.getElementById('gaugeNeedle');
+    if (gaugeFill) {
+        gaugeFill.style.strokeDasharray = ARC_LEN;
+        gaugeFill.style.strokeDashoffset = ARC_LEN * (1 - throttle / 100);
+    }
+    if (gaugeNeedle) {
+        const angle = -90 + (throttle / 100) * 180; // -90 (left) to +90 (right)
+        gaugeNeedle.style.transform = `rotate(${angle}deg)`;
+    }
+
+    // Mixer
+    const pM = pitch * 0.3, rM = roll * 0.3;
+    let m = [0, 0, 0, 0];
+    if (throttle > 0) {
+        m[0] = throttle - pM + rM;  // M1 左前
+        m[1] = throttle - pM - rM;  // M2 右前
+        m[2] = throttle + pM + rM;  // M3 左後
+        m[3] = throttle + pM - rM;  // M4 右後
+    }
+    m = m.map(v => Math.max(0, Math.min(100, Math.round(v))));
+
+    for (let i = 0; i < 4; i++) {
+        pwrEls[i].textContent = m[i] > 0 ? m[i] + '%' : '';
+        // 轉速：低油門就快，高油門極快
+        const spd = Math.pow(m[i] / 100, 1.5);
+        propEls[i].style.animationDuration = m[i] === 0 ? '0s' : (0.3 / (1 + spd * 5)) + 's';
+        // 透明度：保持可見，高速時稍淡但仍看得到旋轉
+        const opacity = m[i] === 0 ? 0 : Math.max(0.35, 1 - m[i] / 200);
+        propEls[i].style.opacity = opacity;
+        arcEls[i].style.strokeDashoffset = ARC_CIRC * (1 - m[i] / 100);
+    }
+
+    // Physics — 自穩永遠開啟
+    const rF = ((m[0] + m[2]) - (m[1] + m[3])) * 1.0;
+    const pF = ((m[2] + m[3]) - (m[0] + m[1])) * 1.0;
+    const gR = -curRoll * 0.35;
+    const gP = -curPitch * 0.35;
+
+    if (throttle === 0) {
+        curRoll += (0 - curRoll) * 0.25;
+        curPitch += (0 - curPitch) * 0.25;
+    } else {
+        curRoll += (rF + gR - curRoll) * 0.35;
+        curPitch += (pF + gP - curPitch) * 0.35;
+    }
+    curRoll = Math.max(-25, Math.min(25, curRoll));
+    curPitch = Math.max(-25, Math.min(25, curPitch));
+
+    document.getElementById('droneBody').style.transform =
+        `rotateX(${curPitch}deg) rotateY(${curRoll}deg)`;
+    document.getElementById('droneGlow').classList.toggle('on', throttle > 0);
+
+    requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+</script>
+</body>
+</html>
