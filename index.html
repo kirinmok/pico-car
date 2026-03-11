@@ -106,6 +106,46 @@ h1 {
 </div>
 
 <script>
+// 搖桿選單控制
+const cards = document.querySelectorAll('.mode-card');
+let selected = 0;
+function highlight(i) {
+  cards.forEach((c,j) => { c.style.borderColor = j===i ? '#f5c842' : '#1e2a38'; c.style.transform = j===i ? 'translateY(-4px)' : ''; });
+}
+highlight(0);
+
+// 搖桿 WebSocket
+let menuWs = null;
+let prevJy = 0, prevA = 0;
+function connectMenu() {
+  const host = location.hostname || 'localhost';
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  try { menuWs = new WebSocket(proto+host+':8765'); } catch(e){ return; }
+  menuWs.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      const jy = d.jy || 0;
+      // 上下切換（邊緣觸發）
+      if (jy === 1 && prevJy !== 1) { selected = (selected - 1 + cards.length) % cards.length; highlight(selected); }
+      if (jy === -1 && prevJy !== -1) { selected = (selected + 1) % cards.length; highlight(selected); }
+      prevJy = jy;
+      // 黃色按鈕(a)確認進入
+      if (d.a && !prevA) { location.href = cards[selected].href; }
+      prevA = d.a || 0;
+    } catch(err){}
+  };
+  menuWs.onclose = () => setTimeout(connectMenu, 2000);
+  menuWs.onerror = () => { try { menuWs.close(); } catch(e){} };
+}
+connectMenu();
+
+// 鍵盤也能選
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp' || e.key === 'w') { selected = (selected - 1 + cards.length) % cards.length; highlight(selected); }
+  if (e.key === 'ArrowDown' || e.key === 's') { selected = (selected + 1) % cards.length; highlight(selected); }
+  if (e.key === 'Enter' || e.key === ' ') { location.href = cards[selected].href; }
+});
+
 function checkServer() {
   const host = location.hostname || 'localhost';
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';

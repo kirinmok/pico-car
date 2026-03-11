@@ -89,6 +89,13 @@ canvas { display: block; }
   padding: 6px 14px; border-radius: 20px; font-size: 12px;
   pointer-events: none;
 }
+#homeBtn {
+  position: absolute; top: 20px; right: 230px;
+  background: rgba(0,0,0,0.7); color: #f5c842; border: 1px solid #f5c84266;
+  padding: 8px 16px; border-radius: 10px; font-size: 13px; font-weight: 700;
+  cursor: pointer; z-index: 25; text-decoration: none; letter-spacing: 1px;
+}
+#homeBtn:hover { background: rgba(245,200,66,0.2); }
 .pico-on { background: rgba(0,80,0,0.8); color: #0f0; border: 1px solid #0f04; }
 .pico-off { background: rgba(60,0,0,0.8); color: #f66; border: 1px solid #f004; }
 
@@ -187,6 +194,7 @@ canvas { display: block; }
   <div id="speedUnit">KM/H</div>
 </div>
 
+<a id="homeBtn" href="index.html">← 首頁</a>
 <canvas id="minimap" width="200" height="120"></canvas>
 <div id="viewTip"><span style="color:#FFD700">●</span>加速(W) <span style="color:#E03030">●</span>煞車(S) <span style="color:#4488FF">●</span>左轉(A) <span style="color:#00CC44">●</span>右轉(D) <span style="color:#FFFFFF">●</span>甩尾(Shift) <span style="color:#666">●</span>視角(V)</div>
 <div id="countdown"><div id="cdNum">3</div></div>
@@ -607,6 +615,8 @@ function connectPico(){
       }
       pico.prevB = newB;
       pico.connected = true;
+      // 加速+煞車同時按 = 回首頁
+      if((d.a||0) && newB) location.href = 'index.html';
     } catch(err){}
   };
 }
