@@ -150,7 +150,12 @@ const joy = { jx: 0, jy: 0, a: 0, b: 0, connected: false, btns: [], prevB: 0 };
 
 function connectWS(){
   const host = location.hostname || 'localhost';
-  const ws = new WebSocket('ws://'+host+':8765');
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  let ws;
+  try { ws = new WebSocket(proto+host+':8765'); } catch(e){
+    document.getElementById('joystickStatus').textContent = '🔌 搖桿: 僅限本機連線';
+    return;
+  }
   ws.onopen = () => { joy.connected = true; };
   ws.onclose = () => { joy.connected = false; setTimeout(connectWS, 2000); };
   ws.onerror = () => ws.close();
