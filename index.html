@@ -1,9 +1,133 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-TW">
 <head>
-<meta http-equiv="refresh" content="0; url=race.html">
+<meta charset="UTF-8">
+<title>Pico W 遙控車 — 模式選擇</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0b0f14; color: #c8e8f8;
+  font-family: system-ui, sans-serif;
+  min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 40px;
+}
+h1 {
+  font-size: 28px; font-weight: 900; letter-spacing: 3px;
+  background: linear-gradient(90deg, #f5c842, #e74c3c);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.subtitle { color: #556; font-size: 13px; margin-top: -20px; }
+.modes { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; }
+.mode-card {
+  width: 260px; padding: 28px 24px; border-radius: 16px;
+  background: #111820; border: 2px solid #1e2a38;
+  cursor: pointer; transition: all 0.25s; text-decoration: none;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.mode-card:hover {
+  border-color: #f5c842; transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(245,200,66,0.15);
+}
+.mode-icon { font-size: 48px; }
+.mode-title { font-size: 18px; font-weight: 700; color: #f5c842; }
+.mode-desc { font-size: 13px; color: #668; line-height: 1.6; }
+.mode-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.tag {
+  font-size: 10px; padding: 3px 8px; border-radius: 10px;
+  background: rgba(245,200,66,0.1); color: #f5c842; border: 1px solid rgba(245,200,66,0.2);
+}
+.status-bar {
+  font-size: 12px; color: #334; display: flex; gap: 16px; align-items: center;
+}
+#wsStatus { color: #E03030; }
+.hint { font-size: 12px; color: #778; text-align: center; max-width: 600px; line-height: 2; }
+.hint .dot { font-size: 14px; }
+.hint .key { background: rgba(255,255,255,0.1); padding: 1px 6px; border-radius: 4px; font-size: 11px; color: #aab; }
+</style>
 </head>
 <body>
-<a href="race.html">Pico Car Racing Game</a>
+
+<h1>PICO W RC CAR</h1>
+<div class="subtitle">選擇遊戲模式</div>
+
+<div class="modes">
+  <a class="mode-card" href="car_game.html">
+    <div class="mode-icon">🗺️</div>
+    <div class="mode-title">自由探索</div>
+    <div class="mode-desc">
+      開放世界自由移動，收集金幣。<br>
+      支援 3 種視角切換（俯瞰 / 追蹤 / 駕駛艙）
+    </div>
+    <div class="mode-tags">
+      <span class="tag">金幣收集</span>
+      <span class="tag">3 視角</span>
+      <span class="tag">加速 Boost</span>
+    </div>
+  </a>
+
+  <a class="mode-card" href="race.html">
+    <div class="mode-icon">🏁</div>
+    <div class="mode-title">橢圓競速</div>
+    <div class="mode-desc">
+      橢圓賽道計圈競速，含倒數計時、記分板與最速圈紀錄。
+    </div>
+    <div class="mode-tags">
+      <span class="tag">計圈賽</span>
+      <span class="tag">排行榜</span>
+      <span class="tag">倒數起跑</span>
+    </div>
+  </a>
+
+  <a class="mode-card" href="racing_game.html">
+    <div class="mode-icon">🏎️</div>
+    <div class="mode-title">賽道挑戰</div>
+    <div class="mode-desc">
+      複雜賽道含障礙物、彎道，3 種攝影機視角（追蹤 / 鳥瞰 / 駕駛艙）。
+    </div>
+    <div class="mode-tags">
+      <span class="tag">3 視角</span>
+      <span class="tag">障礙物</span>
+      <span class="tag">甩尾物理</span>
+    </div>
+  </a>
+</div>
+
+<div class="status-bar">
+  <span>伺服器狀態：<span id="wsStatus">檢測中...</span></span>
+</div>
+
+<div class="hint">
+  <span class="dot" style="color:#FFD700">●</span>加速 <span class="key">W</span>
+  <span class="dot" style="color:#E03030">●</span>煞車 <span class="key">S</span>
+  <span class="dot" style="color:#4488FF">●</span>左轉 <span class="key">A</span>
+  <span class="dot" style="color:#00CC44">●</span>右轉 <span class="key">D</span>
+  <span class="dot" style="color:#FFFFFF">●</span>甩尾 <span class="key">Shift</span>
+  <span class="dot" style="color:#666">●</span>視角 <span class="key">V</span>
+</div>
+
+<script>
+function checkServer() {
+  const host = location.hostname || 'localhost';
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  const el = document.getElementById('wsStatus');
+  let ws;
+  try { ws = new WebSocket(proto + host + ':8765'); } catch(e){
+    el.textContent = '僅限本機 ✗';
+    el.style.color = '#E03030';
+    return;
+  }
+  ws.onopen = () => {
+    el.textContent = '已連線 ✓';
+    el.style.color = '#00B060';
+    ws.close();
+  };
+  ws.onerror = () => {
+    el.textContent = '未連線 ✗';
+    el.style.color = '#E03030';
+  };
+}
+checkServer();
+setInterval(checkServer, 5000);
+</script>
 </body>
 </html>
