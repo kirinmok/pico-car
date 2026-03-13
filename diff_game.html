@@ -178,13 +178,19 @@ function connectPico(){
   ws.onmessage = (e) => {
     try {
       const d = JSON.parse(e.data);
-      // 支援兩種格式：diff_car.py {left, right, action} 或 rc_car.py {jx, jy, a, b}
-      if(d.left !== undefined){
+      // 支援三種格式：
+      // 1. serial_bridge USB 版 {a, l, r}
+      // 2. diff_car.py WiFi 版 {left, right, action}
+      // 3. rc_car.py {jx, jy, a, b}
+      if(d.l !== undefined && d.r !== undefined && d.a !== undefined && typeof d.a === 'string'){
+        pico.left = d.l;
+        pico.right = d.r;
+        pico.action = d.a;
+      } else if(d.left !== undefined){
         pico.left = d.left || 0;
         pico.right = d.right || 0;
         pico.action = d.action || 'stop';
-      } else {
-        // 相容 rc_car.py：jy=前後 jx=左右 → 轉換成差速
+      } else if(d.jx !== undefined || d.jy !== undefined){
         const jy = d.jy || 0, jx = d.jx || 0;
         pico.left  = Math.max(-1, Math.min(1, jy + jx));
         pico.right = Math.max(-1, Math.min(1, jy - jx));
@@ -391,59 +397,68 @@ function draw(t){
     ctx.fillText('$', c.x, c.y + bob);
   }
 
+  // 原地旋轉光環（在車子旋轉座標之前畫，不跟著轉）
+  if(car.leftSpeed < 0 && car.rightSpeed > 0){
+    const ringR = 50;
+    ctx.save();
+    ctx.translate(car.x, car.y);
+    ctx.strokeStyle = '#ccc';
+    ctx.lineWidth = 12;
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.arc(0, 0, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   // 車子
   ctx.save();
   ctx.translate(car.x, car.y);
   ctx.rotate(car.angle);
 
-  // 車身
-  ctx.fillStyle = '#1a3050';
-  ctx.strokeStyle = '#4488FF';
+  const cw = car.width, ch = car.height;
+
+  // 車身（灰色主體）
+  ctx.fillStyle = '#666';
+  ctx.strokeStyle = '#888';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(-car.width/2, -car.height/2, car.width, car.height, 6);
+  ctx.roundRect(-cw/2, -ch/2, cw, ch, 4);
   ctx.fill();
   ctx.stroke();
 
-  // 左輪
-  const wheelW = 8, wheelH = 16;
-  const lColor = car.leftSpeed > 0 ? '#00CC44' : car.leftSpeed < 0 ? '#E03030' : '#444';
-  ctx.fillStyle = lColor;
-  ctx.fillRect(-car.width/2 - wheelW/2 - 2, -wheelH/2, wheelW, wheelH);
-  // 左輪轉速箭頭
-  if(car.leftSpeed !== 0){
-    ctx.fillStyle = '#FFF';
-    ctx.font = '10px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(car.leftSpeed > 0 ? '▲' : '▼', -car.width/2 - 2, 2);
-  }
-
-  // 右輪
-  const rColor = car.rightSpeed > 0 ? '#00CC44' : car.rightSpeed < 0 ? '#E03030' : '#444';
-  ctx.fillStyle = rColor;
-  ctx.fillRect(car.width/2 - wheelW/2 + 2, -wheelH/2, wheelW, wheelH);
-  if(car.rightSpeed !== 0){
-    ctx.fillStyle = '#FFF';
-    ctx.font = '10px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(car.rightSpeed > 0 ? '▲' : '▼', car.width/2 + 2, 2);
-  }
-
-  // 車頭標記
+  // 黃色車頭三角（前方 = 上方）
   ctx.fillStyle = '#f5c842';
   ctx.beginPath();
-  ctx.moveTo(-8, -car.height/2 + 2);
-  ctx.lineTo(8, -car.height/2 + 2);
-  ctx.lineTo(0, -car.height/2 - 6);
+  ctx.moveTo(-12, -ch/2 + 2);
+  ctx.lineTo(12, -ch/2 + 2);
+  ctx.lineTo(0, -ch/2 - 12);
+  ctx.closePath();
   ctx.fill();
 
-  // L / R 標示
-  ctx.fillStyle = '#4488FF88';
-  ctx.font = 'bold 10px sans-serif';
+  // 紅色車尾（後方 = 下方）
+  ctx.fillStyle = '#E03030';
+  ctx.fillRect(-cw/2 + 4, ch/2 - 6, cw - 8, 5);
+
+  // 藍色左輪
+  const wheelW = 10, wheelH = 20;
+  ctx.fillStyle = '#4488FF';
+  ctx.fillRect(-cw/2 - wheelW/2 - 3, -wheelH/2, wheelW, wheelH);
+
+  // 綠色右輪
+  ctx.fillStyle = '#5BB8B0';
+  ctx.fillRect(cw/2 - wheelW/2 + 3, -wheelH/2, wheelW, wheelH);
+
+  // 輪速箭頭（白色，只在轉動時顯示）
+  ctx.fillStyle = '#FFF';
+  ctx.font = 'bold 11px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('L', -12, 4);
-  ctx.fillStyle = '#00CC4488';
-  ctx.fillText('R', 12, 4);
+  ctx.textBaseline = 'middle';
+  if(car.leftSpeed > 0) ctx.fillText('▲', -cw/2 - 3, 0);
+  else if(car.leftSpeed < 0) ctx.fillText('▼', -cw/2 - 3, 0);
+  if(car.rightSpeed > 0) ctx.fillText('▲', cw/2 + 3, 0);
+  else if(car.rightSpeed < 0) ctx.fillText('▼', cw/2 + 3, 0);
 
   ctx.restore();
 
