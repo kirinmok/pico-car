@@ -202,8 +202,8 @@ function connectPico(){
         document.getElementById('tutorial').style.display = 'none';
         gameStarted = true;
       }
-      // 白色按鈕 = 重新整理（遊戲中按才重來）
-      if(act === 'spin' && gameStarted){
+      // 黑+白同時按 = 重開（任何時候）
+      if(act === 'restart'){
         location.reload();
       }
     } catch(err){}

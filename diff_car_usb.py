@@ -125,8 +125,11 @@ def main():
         l_pwr = 0
         r_pwr = 0
 
-        # 1. 實體按鈕（黑色 = 確認/停車）
-        if btn_stop.value() == 0:
+        # 1. 實體按鈕
+        # 黑+白同時按 = 重開
+        if btn_stop.value() == 0 and btn_spare.value() == 0:
+            action = "restart"
+        elif btn_stop.value() == 0:
             action = "ok"
         elif btn_fwd.value() == 0:
             action = "fwd"; l_pwr = 1; r_pwr = 1
