@@ -149,6 +149,12 @@ def read_joy():
 def main():
     motor_stop()
     calibrate_joy()
+    # 開機自檢：依序閃 黃→藍→綠→紅，確認方向
+    for direction in ["fwd", "left", "right", "back"]:
+        print(json.dumps({"a": direction, "l": 0, "r": 0, "test": 1}))
+        led.on(); time.sleep(0.3)
+        led.off(); time.sleep(0.2)
+    led.on()
     print('{"status":"ready"}')
     blink = 0
 

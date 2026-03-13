@@ -31,6 +31,15 @@ canvas#game{display:block;margin:0 auto;}
 
 #picoStatus{position:fixed;bottom:16px;left:16px;padding:6px 14px;
   border-radius:20px;font-size:12px;border:1px solid #333;background:rgba(0,0,0,.7);}
+
+#testFlash{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:120px;height:120px;border-radius:50%;display:none;z-index:60;
+  animation:flashPulse 0.4s ease-out;pointer-events:none;}
+#testLabel{position:fixed;top:calc(50% + 80px);left:50%;transform:translateX(-50%);
+  font-size:20px;font-weight:700;color:#fff;display:none;z-index:60;pointer-events:none;}
+@keyframes flashPulse{0%{transform:translate(-50%,-50%) scale(0.5);opacity:0;}
+  50%{transform:translate(-50%,-50%) scale(1.1);opacity:1;}
+  100%{transform:translate(-50%,-50%) scale(1);opacity:0.9;}}
 .pico-on{color:#00B060;border-color:#00B06044!important;}
 .pico-off{color:#E03030;border-color:#E0303044!important;}
 
@@ -47,6 +56,8 @@ canvas#game{display:block;margin:0 auto;}
 <body>
 <a id="homeBtn" href="index.html">← 首頁</a>
 <canvas id="game"></canvas>
+<div id="testFlash"></div>
+<div id="testLabel"></div>
 
 <div id="hud">
   <div>金幣 <b id="coins">0</b></div>
@@ -196,6 +207,29 @@ function connectPico(){
         pico.right = Math.max(-1, Math.min(1, jy - jx));
         pico.action = jy > 0 ? 'fwd' : jy < 0 ? 'back' : jx !== 0 ? (jx < 0 ? 'left' : 'right') : 'stop';
       }
+      // 開機自檢閃燈
+      if(d.test){
+        const act = d.a || '';
+        const testColors = {fwd:'#f5c842',left:'#4488FF',right:'#00CC44',back:'#E03030'};
+        const testNames = {fwd:'▲ 前進',left:'◀ 左轉',right:'▶ 右轉',back:'▼ 後退'};
+        const flash = document.getElementById('testFlash');
+        const label = document.getElementById('testLabel');
+        flash.style.background = testColors[act] || '#fff';
+        flash.style.display = 'block';
+        flash.style.animation = 'none';
+        flash.offsetHeight; // 觸發 reflow
+        flash.style.animation = 'flashPulse 0.4s ease-out';
+        label.textContent = testNames[act] || '';
+        label.style.color = testColors[act] || '#fff';
+        label.style.display = 'block';
+        clearTimeout(window._testTimer);
+        window._testTimer = setTimeout(()=>{
+          flash.style.display = 'none';
+          label.style.display = 'none';
+        }, 450);
+        return; // 測試信號不移動車子
+      }
+
       // 黑色按鈕 = 確認（開始練習）
       const act = d.a || d.action || '';
       if(act === 'ok' && !gameStarted){
