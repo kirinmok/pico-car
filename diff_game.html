@@ -255,9 +255,9 @@ function updateCar(dt){
 
   // 差速轉彎物理：
   // v = (vL + vR) / 2        → 線速度
-  // omega = (vR - vL) / wheelBase → 角速度
+  // omega = (vL - vR) / wheelBase → 角速度（左輪快=右轉）
   const v = (vL + vR) / 2;
-  const omega = (vR - vL) / car.wheelBase;
+  const omega = (vL - vR) / car.wheelBase;
 
   car.angle += omega * dt;
   car.x += Math.sin(car.angle) * v * dt;
