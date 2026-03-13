@@ -1,11 +1,9 @@
 """
 差速轉彎遙控車 — Pico W AP 模式（獨立運作版）
 Pico W 自己開 WiFi 熱點 + WebSocket 伺服器
-Mac/手機連上 Pico W 的 WiFi → 開瀏覽器就能玩
+iPad/手機掃 QR Code → 自動連 WiFi → 開遙控器
 
-連線方式：
-  1. 手機/電腦 WiFi 搜尋 "PicoCar" 密碼 "12345678"
-  2. 瀏覽器開 http://192.168.4.1:8080
+每台車改 CAR_ID 就有獨立 WiFi，互不干擾
 """
 import network
 import socket
@@ -13,8 +11,12 @@ import json
 import time
 from machine import Pin, PWM, reset
 
-# ===== AP 設定 =====
-AP_SSID = "PicoCar"
+# ╔══════════════════════════════════════╗
+# ║  改這個數字就好！每台車不同編號     ║
+# ╚══════════════════════════════════════╝
+CAR_ID = 1
+
+AP_SSID = "PicoCar-%02d" % CAR_ID
 AP_PASS = "12345678"
 
 # ===== 馬達驅動腳位（L298N）=====
@@ -176,34 +178,43 @@ def ws_recv(cl):
 # ===== 內建控制網頁 =====
 def get_control_page():
     return """<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PicoCar</title>
+<html><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>PicoCar-%02d</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+html,body{height:100%%;overflow:hidden;}
 body{background:#0b0f14;color:#fff;font-family:system-ui;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;min-height:100vh;gap:18px;}
-h1{font-size:22px;color:#f5c842;letter-spacing:2px;}
-#status{font-size:13px;padding:4px 14px;border-radius:20px;border:1px solid #333;}
+  align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;gap:12px;padding:16px;}
+.title{font-size:20px;color:#f5c842;letter-spacing:2px;}
+.carid{font-size:36px;font-weight:900;color:#f5c842;line-height:1;}
+#status{font-size:12px;padding:4px 14px;border-radius:20px;border:1px solid #333;}
 .on{color:#0b6;border-color:#0b644!important;}
 .off{color:#e03030;border-color:#e0303044!important;}
-.pad{position:relative;width:260px;height:280px;}
-.btn{position:absolute;width:80px;height:80px;border:none;border-radius:50%;
-  font-size:28px;font-weight:700;color:#fff;cursor:pointer;
+.act{font-size:16px;color:#f5c842;font-weight:700;min-height:22px;}
+.pad{position:relative;width:270px;height:290px;flex-shrink:0;}
+.btn{position:absolute;border:none;border-radius:50%%;
+  font-size:30px;font-weight:700;color:#fff;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
-  transition:all .12s;box-shadow:0 4px 12px rgba(0,0,0,0.4);}
-.btn:active{transform:scale(0.88);filter:brightness(1.3);}
-#fwd{background:#f5c842;left:90px;top:60px;}
-#back{background:#E03030;left:90px;top:190px;}
-#left{background:#4488FF;left:20px;top:125px;}
-#right{background:#00CC44;left:160px;top:125px;}
-#spin{background:#fff;color:#333;left:180px;top:0;width:64px;height:64px;font-size:22px;}
+  transition:transform .1s,filter .1s;touch-action:manipulation;
+  box-shadow:0 4px 14px rgba(0,0,0,0.5);}
+.btn:active{transform:scale(0.85);filter:brightness(1.4);}
+#fwd{background:#f5c842;width:88px;height:88px;left:91px;top:55px;}
+#back{background:#E03030;width:88px;height:88px;left:91px;top:195px;}
+#left{background:#4488FF;width:88px;height:88px;left:16px;top:125px;}
+#right{background:#00CC44;width:88px;height:88px;left:166px;top:125px;}
+#spin{background:#fff;color:#333;width:58px;height:58px;left:196px;top:2px;font-size:22px;}
 .motors{display:flex;gap:20px;font-size:12px;color:#888;}
-.mbar{width:80px;height:12px;background:#222;border-radius:6px;overflow:hidden;position:relative;}
-.mfill{height:100%;border-radius:6px;position:absolute;transition:width .1s;}
-.info{font-size:11px;color:#445;text-align:center;line-height:1.8;}
+.mbar{width:88px;height:13px;background:#222;border-radius:7px;overflow:hidden;position:relative;}
+.mfill{height:100%%;border-radius:7px;position:absolute;transition:width .1s;}
+.info{font-size:10px;color:#445;text-align:center;line-height:1.6;}
 </style></head><body>
-<h1>PicoCar</h1>
+<div class="title">PicoCar</div>
+<div class="carid">#%02d</div>
 <div id="status" class="off">連線中...</div>
+<div class="act" id="act"></div>
 <div class="pad">
   <button class="btn" id="fwd">&#x2B06;</button>
   <button class="btn" id="back">&#x2B07;</button>
@@ -212,46 +223,45 @@ h1{font-size:22px;color:#f5c842;letter-spacing:2px;}
   <button class="btn" id="spin">&#x27F3;</button>
 </div>
 <div class="motors">
-  <div>左輪 <div class="mbar"><div class="mfill" id="lb" style="width:0;left:50%;background:#48f;"></div></div></div>
-  <div>右輪 <div class="mbar"><div class="mfill" id="rb" style="width:0;left:50%;background:#0c4;"></div></div></div>
+  <div>左輪 <div class="mbar"><div class="mfill" id="lb" style="width:0;left:50%%;background:#48f;"></div></div></div>
+  <div>右輪 <div class="mbar"><div class="mfill" id="rb" style="width:0;left:50%%;background:#0c4;"></div></div></div>
 </div>
-<div class="info">
-  按住不放＝持續動作　放開＝停車<br>
-  鍵盤 W/S/A/D/Q/Space
-</div>
+<div class="info">按住不放＝持續動作　放開＝停車</div>
 <script>
-let ws,action='stop';
+let ws,curAction='stop';
+const names={fwd:'\\u25b2 前進',back:'\\u25bc 後退',left:'\\u25c0 左轉',right:'\\u25b6 右轉',spin:'\\u21bb 旋轉',stop:''};
 function connect(){
   ws=new WebSocket('ws://'+location.host+'/ws');
   ws.onopen=()=>{document.getElementById('status').className='on';
     document.getElementById('status').textContent='已連線';};
-  ws.onmessage=(e)=>{try{const d=JSON.parse(e.data);updateBars(d.l||0,d.r||0);}catch(x){}};
+  ws.onmessage=(e)=>{try{const d=JSON.parse(e.data);
+    const a=d.a||'stop';if(a!==curAction){curAction=a;document.getElementById('act').textContent=names[a]||'';}
+    updateBars(d.l||0,d.r||0);
+    ['fwd','back','left','right','spin'].forEach(id=>{
+      document.getElementById(id).style.opacity=id===a?'1':'0.6';});
+  }catch(x){}};
   ws.onclose=()=>{document.getElementById('status').className='off';
-    document.getElementById('status').textContent='已斷線';setTimeout(connect,1000);};
+    document.getElementById('status').textContent='已斷線';setTimeout(connect,1500);};
   ws.onerror=()=>{try{ws.close();}catch(x){}};
 }
-function send(a){action=a;if(ws&&ws.readyState===1)ws.send(JSON.stringify({action:a}));}
+function send(a){if(ws&&ws.readyState===1)ws.send(JSON.stringify({action:a}));}
 function updateBars(l,r){
   const lb=document.getElementById('lb'),rb=document.getElementById('rb');
-  lb.style.width=Math.abs(l)*50+'%';lb.style.left=l>=0?'50%':(50-Math.abs(l)*50)+'%';
+  lb.style.width=Math.abs(l)*50+'%%';lb.style.left=l>=0?'50%%':(50-Math.abs(l)*50)+'%%';
   lb.style.background=l>=0?'#48f':'#e03030';
-  rb.style.width=Math.abs(r)*50+'%';rb.style.left=r>=0?'50%':(50-Math.abs(r)*50)+'%';
+  rb.style.width=Math.abs(r)*50+'%%';rb.style.left=r>=0?'50%%':(50-Math.abs(r)*50)+'%%';
   rb.style.background=r>=0?'#0c4':'#e03030';
 }
 ['fwd','back','left','right','spin'].forEach(id=>{
   const el=document.getElementById(id);
   const start=()=>send(id);const stop=()=>send('stop');
   el.addEventListener('mousedown',start);el.addEventListener('mouseup',stop);el.addEventListener('mouseleave',stop);
-  el.addEventListener('touchstart',(e)=>{e.preventDefault();start();});
-  el.addEventListener('touchend',(e)=>{e.preventDefault();stop();});
+  el.addEventListener('touchstart',(e)=>{e.preventDefault();start();},{passive:false});
+  el.addEventListener('touchend',(e)=>{e.preventDefault();stop();},{passive:false});
+  el.addEventListener('touchcancel',(e)=>{e.preventDefault();stop();},{passive:false});
 });
-const keyMap={KeyW:'fwd',KeyS:'back',KeyA:'left',KeyD:'right',KeyQ:'spin',Space:'stop',
-  ArrowUp:'fwd',ArrowDown:'back',ArrowLeft:'left',ArrowRight:'right'};
-const held={};
-addEventListener('keydown',(e)=>{if(!held[e.code]&&keyMap[e.code]){held[e.code]=1;send(keyMap[e.code]);}});
-addEventListener('keyup',(e)=>{if(held[e.code]){delete held[e.code];send('stop');}});
 connect();
-</script></body></html>"""
+</script></body></html>""" % (CAR_ID, CAR_ID)
 
 
 # ===== 主程式 =====

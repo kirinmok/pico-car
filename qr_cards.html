@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PicoCar QR 卡片產生器</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#1a1a2e;color:#fff;font-family:system-ui;padding:24px;}
+h1{text-align:center;color:#f5c842;margin-bottom:8px;}
+.subtitle{text-align:center;color:#888;font-size:14px;margin-bottom:24px;}
+
+.controls{display:flex;gap:12px;justify-content:center;align-items:center;
+  margin-bottom:24px;flex-wrap:wrap;}
+.controls label{font-size:14px;color:#aaa;}
+.controls input,.controls select{background:#222;color:#fff;border:1px solid #444;
+  padding:6px 12px;border-radius:6px;font-size:14px;width:80px;}
+.controls button{background:#f5c842;color:#000;border:none;padding:8px 20px;
+  border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;}
+.controls button:hover{background:#ffd866;}
+.print-btn{background:#4488FF!important;color:#fff!important;}
+
+.cards{display:flex;flex-wrap:wrap;gap:20px;justify-content:center;}
+
+.card{background:#fff;color:#000;border-radius:12px;padding:20px;width:280px;
+  text-align:center;page-break-inside:avoid;}
+.card h2{font-size:18px;margin-bottom:4px;}
+.card .ssid{font-size:24px;font-weight:900;color:#f5a623;margin-bottom:8px;}
+.card .qr{margin:12px auto;}
+.card .steps{text-align:left;font-size:12px;line-height:2;color:#555;
+  border-top:1px solid #eee;padding-top:10px;margin-top:10px;}
+.card .steps b{color:#000;}
+.card .wifi-info{font-size:11px;color:#888;margin-top:8px;
+  background:#f8f8f8;padding:6px;border-radius:6px;}
+.card .wifi-info code{font-size:12px;color:#333;font-weight:700;}
+
+.car-colors{display:flex;justify-content:center;gap:4px;margin:8px 0;}
+.car-colors span{width:20px;height:20px;border-radius:50%;display:inline-block;}
+
+@media print{
+  body{background:#fff;padding:10px;}
+  h1,.subtitle,.controls{display:none;}
+  .cards{gap:12px;}
+  .card{border:2px solid #ddd;box-shadow:none;}
+}
+</style>
+</head>
+<body>
+
+<h1>PicoCar QR 卡片</h1>
+<p class="subtitle">列印後剪下，貼在每台車上。學生掃碼就能控車！</p>
+
+<div class="controls">
+  <label>起始編號 <input type="number" id="startId" value="1" min="1" max="99"></label>
+  <label>數量 <input type="number" id="count" value="6" min="1" max="20"></label>
+  <label>密碼 <input type="text" id="password" value="12345678"></label>
+  <button onclick="generate()">產生卡片</button>
+  <button class="print-btn" onclick="window.print()">列印</button>
+</div>
+
+<div class="cards" id="cards"></div>
+
+<script>
+function generate(){
+  const start = parseInt(document.getElementById('startId').value) || 1;
+  const count = parseInt(document.getElementById('count').value) || 6;
+  const pass = document.getElementById('password').value || '12345678';
+  const container = document.getElementById('cards');
+  container.innerHTML = '';
+
+  for(let i = 0; i < count; i++){
+    const id = start + i;
+    const ssid = 'PicoCar-' + String(id).padStart(2, '0');
+    const url = 'http://192.168.4.1:8080';
+    // WiFi QR code format
+    const wifiStr = 'WIFI:T:WPA;S:' + ssid + ';P:' + pass + ';;';
+
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    // Generate QR
+    const qr = qrcode(0, 'M');
+    qr.addData(wifiStr);
+    qr.make();
+
+    card.innerHTML = `
+      <h2>PicoCar</h2>
+      <div class="ssid">#${String(id).padStart(2, '0')}</div>
+      <div class="car-colors">
+        <span style="background:#f5c842" title="前"></span>
+        <span style="background:#4488FF" title="左"></span>
+        <span style="background:#00CC44" title="右"></span>
+        <span style="background:#E03030" title="後"></span>
+      </div>
+      <div class="qr">${qr.createImgTag(4, 8)}</div>
+      <div class="steps">
+        <b>1.</b> 用手機相機掃描 QR Code<br>
+        <b>2.</b> 加入 WiFi「<b>${ssid}</b>」<br>
+        <b>3.</b> 開瀏覽器輸入 <b>${url}</b>
+      </div>
+      <div class="wifi-info">
+        WiFi: <code>${ssid}</code> &nbsp; 密碼: <code>${pass}</code>
+      </div>
+    `;
+
+    container.appendChild(card);
+  }
+}
+
+// 初始產生
+generate();
+</script>
+</body>
+</html>
