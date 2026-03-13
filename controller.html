@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>PicoCar 遙控器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+html,body{height:100%;overflow:hidden;}
+body{background:#0b0f14;color:#fff;font-family:system-ui;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100vh;min-height:100dvh;gap:14px;padding:16px;}
+
+h1{font-size:20px;color:#f5c842;letter-spacing:2px;}
+#status{font-size:12px;padding:4px 14px;border-radius:20px;border:1px solid #333;}
+.on{color:#0b6;border-color:#0b644!important;}
+.off{color:#e03030;border-color:#e0303044!important;}
+.act{font-size:18px;color:#f5c842;font-weight:700;min-height:26px;}
+
+/* 十字按鈕區 */
+.pad{position:relative;width:280px;height:300px;flex-shrink:0;}
+.btn{position:absolute;border:none;border-radius:50%;
+  font-size:32px;font-weight:700;color:#fff;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .1s,filter .1s;touch-action:manipulation;
+  box-shadow:0 4px 16px rgba(0,0,0,0.5);}
+.btn:active,.btn.pressed{transform:scale(0.88);filter:brightness(1.4);}
+
+#fwd{background:#f5c842;width:90px;height:90px;left:95px;top:60px;}
+#back{background:#E03030;width:90px;height:90px;left:95px;top:200px;}
+#left{background:#4488FF;width:90px;height:90px;left:20px;top:130px;}
+#right{background:#00CC44;width:90px;height:90px;left:170px;top:130px;}
+#spin{background:#fff;color:#333;width:60px;height:60px;left:200px;top:5px;font-size:24px;}
+#restart{background:#333;color:#888;width:44px;height:44px;left:10px;top:10px;
+  font-size:12px;border:1px solid #555;}
+
+/* 馬達狀態 */
+.motors{display:flex;gap:20px;font-size:12px;color:#888;}
+.mbar{width:90px;height:14px;background:#222;border-radius:7px;overflow:hidden;position:relative;}
+.mfill{height:100%;border-radius:7px;position:absolute;transition:width .1s;}
+
+.info{font-size:11px;color:#445;text-align:center;line-height:1.6;}
+.car-icon{width:80px;height:100px;position:relative;margin:0 auto;}
+.car-body{width:44px;height:56px;background:#555;border-radius:4px;
+  position:absolute;left:18px;top:20px;border:1px solid #777;}
+.car-front{width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;
+  border-bottom:12px solid #f5c842;position:absolute;left:22px;top:10px;}
+.car-rear{width:32px;height:5px;background:#E03030;border-radius:2px;
+  position:absolute;left:24px;top:72px;}
+.car-lw{width:10px;height:20px;background:#4488FF;border-radius:2px;
+  position:absolute;left:6px;top:36px;}
+.car-rw{width:10px;height:20px;background:#5BB8B0;border-radius:2px;
+  position:absolute;left:64px;top:36px;}
+</style>
+</head>
+<body>
+
+<h1>PicoCar</h1>
+<div id="status" class="off">連線中...</div>
+<div class="act" id="act"></div>
+
+<!-- 車子方向圖示 -->
+<div class="car-icon">
+  <div class="car-front"></div>
+  <div class="car-lw"></div>
+  <div class="car-body"></div>
+  <div class="car-rw"></div>
+  <div class="car-rear"></div>
+</div>
+
+<!-- 十字按鈕 -->
+<div class="pad">
+  <button class="btn" id="restart">重來</button>
+  <button class="btn" id="fwd">&#x2B06;</button>
+  <button class="btn" id="spin">&#x27F3;</button>
+  <button class="btn" id="left">&#x21B0;</button>
+  <button class="btn" id="right">&#x21B1;</button>
+  <button class="btn" id="back">&#x2B07;</button>
+</div>
+
+<!-- 馬達視覺化 -->
+<div class="motors">
+  <div>左輪 <div class="mbar"><div class="mfill" id="lb" style="width:0;left:50%;background:#48f;"></div></div></div>
+  <div>右輪 <div class="mbar"><div class="mfill" id="rb" style="width:0;left:50%;background:#0c4;"></div></div></div>
+</div>
+
+<div class="info">
+  按住不放＝持續動作　放開＝停車<br>
+  黑+白 同時按＝重開遊戲
+</div>
+
+<script>
+let ws, curAction = 'stop';
+const names = {fwd:'▲ 前進',back:'▼ 後退',left:'◀ 左轉',right:'▶ 右轉',spin:'↻ 旋轉',stop:'',ok:'',restart:''};
+
+function connect(){
+  const host = location.hostname || 'localhost';
+  ws = new WebSocket('ws://' + host + ':8765');
+  ws.onopen = () => {
+    document.getElementById('status').className = 'on';
+    document.getElementById('status').textContent = '已連線';
+  };
+  ws.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      const a = d.a || d.action || 'stop';
+      if(a !== curAction){
+        curAction = a;
+        document.getElementById('act').textContent = names[a] || '';
+      }
+      updateBars(d.l || 0, d.r || 0);
+      // 高亮對應按鈕
+      ['fwd','back','left','right','spin'].forEach(id => {
+        document.getElementById(id).classList.toggle('pressed', id === a);
+      });
+    } catch(x){}
+  };
+  ws.onclose = () => {
+    document.getElementById('status').className = 'off';
+    document.getElementById('status').textContent = '已斷線';
+    setTimeout(connect, 1500);
+  };
+  ws.onerror = () => { try { ws.close(); } catch(x){} };
+}
+
+function send(a){
+  if(ws && ws.readyState === 1) ws.send(JSON.stringify({action: a}));
+}
+
+function updateBars(l, r){
+  const lb = document.getElementById('lb'), rb = document.getElementById('rb');
+  lb.style.width = Math.abs(l) * 50 + '%';
+  lb.style.left = l >= 0 ? '50%' : (50 - Math.abs(l) * 50) + '%';
+  lb.style.background = l >= 0 ? '#48f' : '#e03030';
+  rb.style.width = Math.abs(r) * 50 + '%';
+  rb.style.left = r >= 0 ? '50%' : (50 - Math.abs(r) * 50) + '%';
+  rb.style.background = r >= 0 ? '#0c4' : '#e03030';
+}
+
+// 方向按鈕：按住=動作，放開=停
+['fwd','back','left','right','spin'].forEach(id => {
+  const el = document.getElementById(id);
+  const start = () => send(id);
+  const stop = () => send('stop');
+  el.addEventListener('mousedown', start);
+  el.addEventListener('mouseup', stop);
+  el.addEventListener('mouseleave', stop);
+  el.addEventListener('touchstart', (e) => { e.preventDefault(); start(); }, {passive:false});
+  el.addEventListener('touchend', (e) => { e.preventDefault(); stop(); }, {passive:false});
+  el.addEventListener('touchcancel', (e) => { e.preventDefault(); stop(); }, {passive:false});
+});
+
+// 重來按鈕
+document.getElementById('restart').addEventListener('click', () => send('restart'));
+document.getElementById('restart').addEventListener('touchstart', (e) => {
+  e.preventDefault(); send('restart');
+}, {passive:false});
+
+connect();
+</script>
+</body>
+</html>
