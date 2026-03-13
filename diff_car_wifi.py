@@ -43,7 +43,7 @@ def read_joy():
     rx = joy_x.read_u16()
     ry = joy_y.read_u16()
     ax = (rx - 32768) / 32768.0
-    ay = (ry - 32768) / 32768.0
+    ay = (32768 - ry) / 32768.0
     if abs(ax) < DEADZONE: ax = 0
     if abs(ay) < DEADZONE: ay = 0
     return round(ax, 2), round(ay, 2)
