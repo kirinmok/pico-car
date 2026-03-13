@@ -125,9 +125,9 @@ def main():
         l_pwr = 0
         r_pwr = 0
 
-        # 1. 實體按鈕
+        # 1. 實體按鈕（黑色 = 確認/停車）
         if btn_stop.value() == 0:
-            action = "stop"
+            action = "ok"
         elif btn_fwd.value() == 0:
             action = "fwd"; l_pwr = 1; r_pwr = 1
         elif btn_back.value() == 0:

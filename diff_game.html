@@ -196,8 +196,16 @@ function connectPico(){
         pico.right = Math.max(-1, Math.min(1, jy - jx));
         pico.action = jy > 0 ? 'fwd' : jy < 0 ? 'back' : jx !== 0 ? (jx < 0 ? 'left' : 'right') : 'stop';
       }
-      // boost+brake combo = 回首頁
-      if((d.a||0) && (d.b||0)) location.href = 'index.html';
+      // 黑色按鈕 = 確認（開始練習）
+      const act = d.a || d.action || '';
+      if(act === 'ok' && !gameStarted){
+        document.getElementById('tutorial').style.display = 'none';
+        gameStarted = true;
+      }
+      // 白色按鈕 = 重新整理（遊戲中按才重來）
+      if(act === 'spin' && gameStarted){
+        location.reload();
+      }
     } catch(err){}
   };
   ws.onclose = () => {
@@ -236,7 +244,7 @@ function getInput(){
   }
 
   // Pico W 覆蓋（有連線時）
-  if(pico.connected && pico.action !== 'stop'){
+  if(pico.connected && pico.action !== 'stop' && pico.action !== 'ok'){
     leftPower = pico.left;
     rightPower = pico.right;
     action = pico.action;
@@ -302,7 +310,7 @@ function updateCar(dt){
   }
 
   // HUD
-  const actionNames = { stop:'停車', fwd:'前進', back:'後退', left:'左轉', right:'右轉', spin:'旋轉' };
+  const actionNames = { stop:'停車', ok:'停車', fwd:'前進', back:'後退', left:'左轉', right:'右轉', spin:'旋轉' };
   document.getElementById('action').textContent = actionNames[input.action] || '停車';
 
   // 馬達視覺化
