@@ -100,22 +100,39 @@ def check_usb():
     return None
 
 # ===== 搖桿讀取（開機自動校準中心）=====
-DEADZONE = 0.30
+DEADZONE = 0.35
 JOY_CX = 32768
 JOY_CY = 32768
 
 def calibrate_joy():
-    global JOY_CX, JOY_CY
+    global JOY_CX, JOY_CY, HAS_JOYSTICK
     if not HAS_JOYSTICK:
         return
+    # 等 ADC 穩定，LED 快閃提示「校準中」
+    for _ in range(10):
+        led.toggle()
+        joy_x.read_u16()
+        joy_y.read_u16()
+        time.sleep(0.05)
+    # 取 50 次平均
     sx, sy = 0, 0
-    n = 20
+    samples = []
+    n = 50
     for _ in range(n):
-        sx += joy_x.read_u16()
-        sy += joy_y.read_u16()
-        time.sleep(0.01)
+        rx = joy_x.read_u16()
+        ry = joy_y.read_u16()
+        sx += rx; sy += ry
+        samples.append((rx, ry))
+        led.toggle()
+        time.sleep(0.02)
     JOY_CX = sx // n
     JOY_CY = sy // n
+    # 驗證穩定度：如果讀數亂跳（沒接搖桿），停用搖桿
+    max_spread_x = max(s[0] for s in samples) - min(s[0] for s in samples)
+    max_spread_y = max(s[1] for s in samples) - min(s[1] for s in samples)
+    if max_spread_x > 10000 or max_spread_y > 10000:
+        HAS_JOYSTICK = False
+    led.on()
 
 def read_joy():
     if not HAS_JOYSTICK:
