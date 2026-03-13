@@ -257,6 +257,31 @@ connectPico();
 // PHYSICS — 差速轉彎模型
 // ═══════════════════════════════════════════════
 const MOTOR_POWER = 200;  // 最大速度 px/s
+const SNAP_ANGLE = 0.25;  // 吸附閾值（弧度，約 14°）
+const SNAP_STRENGTH = 6;  // 吸附力道（越大越快鎖定）
+
+// 找最近金幣的方向角
+function nearestCoinAngle(){
+  let bestDist = Infinity, bestAngle = null;
+  for(const c of coins){
+    if(c.collected) continue;
+    const dx = c.x - car.x, dy = c.y - car.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist < bestDist){
+      bestDist = dist;
+      bestAngle = Math.atan2(dx, -dy); // 對齊 car.angle 座標系
+    }
+  }
+  return bestAngle;
+}
+
+// 計算兩角度最短差值（-PI ~ PI）
+function angleDiff(a, b){
+  let d = a - b;
+  while(d > Math.PI) d -= Math.PI * 2;
+  while(d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
 
 function getInput(){
   let leftPower = 0, rightPower = 0;
@@ -302,6 +327,18 @@ function updateCar(dt){
   const omega = (vL - vR) / car.wheelBase;
 
   car.angle += omega * dt;
+
+  // 金幣磁吸：旋轉時接近金幣方向會自動鎖定
+  if(input.action === 'spin' || input.action === 'left' || input.action === 'right'){
+    const target = nearestCoinAngle();
+    if(target !== null){
+      const diff = angleDiff(target, car.angle);
+      if(Math.abs(diff) < SNAP_ANGLE){
+        car.angle += diff * SNAP_STRENGTH * dt;
+      }
+    }
+  }
+
   car.x += Math.sin(car.angle) * v * dt;
   car.y -= Math.cos(car.angle) * v * dt;
 
