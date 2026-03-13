@@ -33,17 +33,29 @@ btn_stop  = Pin(16, Pin.IN, Pin.PULL_UP)
 
 led = Pin("LED", Pin.OUT)
 
-# ===== 搖桿 =====
+# ===== 搖桿（開機自動校準中心）=====
 joy_x = ADC(Pin(26))
 joy_y = ADC(Pin(27))
-DEADZONE = 0.20
+DEADZONE = 0.30
+JOY_CX = 32768
+JOY_CY = 32768
 
+def calibrate_joy():
+    global JOY_CX, JOY_CY
+    sx, sy = 0, 0
+    n = 20
+    for _ in range(n):
+        sx += joy_x.read_u16()
+        sy += joy_y.read_u16()
+        time.sleep(0.01)
+    JOY_CX = sx // n
+    JOY_CY = sy // n
 
 def read_joy():
     rx = joy_x.read_u16()
     ry = joy_y.read_u16()
-    ax = (rx - 32768) / 32768.0
-    ay = (32768 - ry) / 32768.0
+    ax = (rx - JOY_CX) / 32768.0
+    ay = (JOY_CY - ry) / 32768.0
     if abs(ax) < DEADZONE: ax = 0
     if abs(ay) < DEADZONE: ay = 0
     return round(ax, 2), round(ay, 2)
@@ -232,6 +244,7 @@ connect();
 
 # ===== 主程式 =====
 def main():
+    calibrate_joy()
     wlan, ip = connect_wifi()
     if not wlan:
         for i in range(20):

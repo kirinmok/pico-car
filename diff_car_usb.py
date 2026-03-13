@@ -99,16 +99,31 @@ def check_usb():
             usb_buf += ch
     return None
 
-# ===== 搖桿讀取 =====
-DEADZONE = 0.20
+# ===== 搖桿讀取（開機自動校準中心）=====
+DEADZONE = 0.30
+JOY_CX = 32768
+JOY_CY = 32768
+
+def calibrate_joy():
+    global JOY_CX, JOY_CY
+    if not HAS_JOYSTICK:
+        return
+    sx, sy = 0, 0
+    n = 20
+    for _ in range(n):
+        sx += joy_x.read_u16()
+        sy += joy_y.read_u16()
+        time.sleep(0.01)
+    JOY_CX = sx // n
+    JOY_CY = sy // n
 
 def read_joy():
     if not HAS_JOYSTICK:
         return 0, 0
     rx = joy_x.read_u16()
     ry = joy_y.read_u16()
-    ax = (rx - 32768) / 32768.0
-    ay = (32768 - ry) / 32768.0
+    ax = (rx - JOY_CX) / 32768.0
+    ay = (JOY_CY - ry) / 32768.0
     if abs(ax) < DEADZONE: ax = 0
     if abs(ay) < DEADZONE: ay = 0
     return round(ax, 2), round(ay, 2)
@@ -116,6 +131,7 @@ def read_joy():
 # ===== 主程式 =====
 def main():
     motor_stop()
+    calibrate_joy()
     print('{"status":"ready"}')
     blink = 0
 
