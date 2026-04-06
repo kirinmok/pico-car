@@ -49,6 +49,7 @@ canvas { display: block; }
 <div id="viewLabel">俯瞰視角 — [V] / 黑鈕切換</div>
 <div id="controls-hint">
   鍵盤 WASD / 方向鍵 操控 | Space 煞車 | Shift 加速 | V 切換視角<br>
+  PS2 手把：左搖桿/十字鍵 操控 | ✕/R2 加速 | □/L2 煞車 | ○ Boost | △ 切換視角<br>
   Pico W: 方向鍵移動 | 白鈕加速 | 黑鈕切換視角
 </div>
 <canvas id="c"></canvas>
@@ -207,6 +208,31 @@ function addFloatingText(x, y, text, color, size) {
 const keys = {};
 const picoInput = { x: 0, y: 0, a: 0, b: 0 };
 let prevB = 0; // for edge detection on B button
+
+// ── PS2 GAMEPAD (via USB adapter, standard Gamepad API) ──
+const gpState = { prevTriangle: false, prevStart: false };
+const GP_DEADZONE = 0.25;
+function pollGamepad() {
+  const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+  const gp = gamepads[0];
+  if (!gp) return { lx: 0, ly: 0, cross: false, circle: false, square: false, triangle: false, l2: false, r2: false, start: false, dUp: false, dDown: false, dLeft: false, dRight: false };
+  const ax = v => Math.abs(v) > GP_DEADZONE ? v : 0;
+  return {
+    lx: ax(gp.axes[0]),               // 左搖桿 X
+    ly: ax(gp.axes[1]),               // 左搖桿 Y
+    cross:    gp.buttons[0]?.pressed,  // ✕ 加速
+    circle:   gp.buttons[1]?.pressed,  // ○ Boost
+    square:   gp.buttons[2]?.pressed,  // □ 煞車
+    triangle: gp.buttons[3]?.pressed,  // △ 切換視角
+    l2:       gp.buttons[6]?.pressed,  // L2 煞車
+    r2:       gp.buttons[7]?.pressed,  // R2 加速
+    start:    gp.buttons[9]?.pressed,  // Start 回首頁
+    dUp:      gp.buttons[12]?.pressed, // 十字鍵 ↑
+    dDown:    gp.buttons[13]?.pressed, // 十字鍵 ↓
+    dLeft:    gp.buttons[14]?.pressed, // 十字鍵 ←
+    dRight:   gp.buttons[15]?.pressed, // 十字鍵 →
+  };
+}
 
 addEventListener('keydown', e => {
   keys[e.code] = true;
@@ -728,6 +754,22 @@ function update() {
   if (keys['ArrowRight'] || keys['KeyD']) inputX = 1;
   if (keys['ShiftLeft'] || keys['ShiftRight']) boost = true;
   if (keys['Space']) brake = true;
+
+  // PS2 Gamepad
+  const gp = pollGamepad();
+  if (gp.lx) inputX = gp.lx;
+  if (gp.ly) inputY = gp.ly;
+  if (gp.dUp) inputY = -1;
+  if (gp.dDown) inputY = 1;
+  if (gp.dLeft) inputX = -1;
+  if (gp.dRight) inputX = 1;
+  if (gp.cross || gp.r2) inputY = -1;
+  if (gp.square || gp.l2) brake = true;
+  if (gp.circle) boost = true;
+  if (gp.triangle && !gpState.prevTriangle) cycleView();
+  gpState.prevTriangle = gp.triangle;
+  if (gp.start && !gpState.prevStart) location.href = 'index.html';
+  gpState.prevStart = gp.start;
 
   // Pico W
   const picoActive = picoInput.x !== 0 || picoInput.y !== 0 || picoInput.a;
