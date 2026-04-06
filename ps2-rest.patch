@@ -1,0 +1,323 @@
+diff --git a/index.html b/index.html
+index bcfd02f..1a38ca2 100644
+--- a/index.html
++++ b/index.html
+@@ -116,7 +116,8 @@ h1 {
+   <span class="dot" style="color:#4488FF">●</span>左轉 <span class="key">A</span>
+   <span class="dot" style="color:#00CC44">●</span>右轉 <span class="key">D</span>
+   <span class="dot" style="color:#FFFFFF">●</span>甩尾 <span class="key">Shift</span>
+-  <span class="dot" style="color:#666">●</span>視角 <span class="key">V</span>
++  <span class="dot" style="color:#666">●</span>視角 <span class="key">V</span><br>
++  PS2 手把：左搖桿/十字鍵 選擇 | <span class="key">✕</span> 確認 | <span class="key">○</span> Boost | <span class="key">□</span> 煞車 | <span class="key">△</span> 切換視角
+ </div>
+ 
+ <script>
+@@ -160,6 +161,24 @@ addEventListener('keydown', e => {
+   if (e.key === 'Enter' || e.key === ' ') { location.href = cards[selected].href; }
+ });
+ 
++// ── PS2 GAMEPAD 選單導覽 ──
++const GP_DEADZONE = 0.25;
++let gpPrevUp = false, gpPrevDown = false, gpPrevCross = false;
++function pollMenuGamepad() {
++  const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
++  const gp = gamepads[0];
++  if (!gp) return;
++  const ly = Math.abs(gp.axes[1]) > GP_DEADZONE ? gp.axes[1] : 0;
++  const up = ly < -0.5 || gp.buttons[12]?.pressed;
++  const down = ly > 0.5 || gp.buttons[13]?.pressed;
++  const confirm = gp.buttons[0]?.pressed; // ✕ 確認
++  if (up && !gpPrevUp) { selected = (selected - 1 + cards.length) % cards.length; highlight(selected); }
++  if (down && !gpPrevDown) { selected = (selected + 1) % cards.length; highlight(selected); }
++  if (confirm && !gpPrevCross) { location.href = cards[selected].href; }
++  gpPrevUp = up; gpPrevDown = down; gpPrevCross = confirm;
++}
++setInterval(pollMenuGamepad, 60);
++
+ function checkServer() {
+   const host = location.hostname || 'localhost';
+   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+diff --git a/race.html b/race.html
+index a2d8196..d26fcbc 100644
+--- a/race.html
++++ b/race.html
+@@ -196,7 +196,7 @@ canvas { display: block; }
+ 
+ <a id="homeBtn" href="index.html">← 首頁</a>
+ <canvas id="minimap" width="200" height="120"></canvas>
+-<div id="viewTip"><span style="color:#FFD700">●</span>加速(W) <span style="color:#E03030">●</span>煞車(S) <span style="color:#4488FF">●</span>左轉(A) <span style="color:#00CC44">●</span>右轉(D) <span style="color:#FFFFFF">●</span>甩尾(Shift) <span style="color:#666">●</span>視角(V)</div>
++<div id="viewTip"><span style="color:#FFD700">●</span>加速(W/✕/R2) <span style="color:#E03030">●</span>煞車(S) <span style="color:#4488FF">●</span>左轉(A) <span style="color:#00CC44">●</span>右轉(D) <span style="color:#FFFFFF">●</span>甩尾(Shift/□/L2) <span style="color:#666">●</span>視角(V/△) <span style="color:#999">●</span>PS2手把支援</div>
+ <div id="countdown"><div id="cdNum">3</div></div>
+ <div id="flagWrap"><canvas id="flagCanvas" width="160" height="120"></canvas></div>
+ <div id="picoStatus" class="pico-off">Pico W: 偵測中...</div>
+@@ -622,6 +622,31 @@ function connectPico(){
+ }
+ connectPico();
+ 
++// ── PS2 GAMEPAD (via USB adapter, standard Gamepad API) ──
++const gpState = { prevTriangle: false, prevStart: false };
++const GP_DEADZONE = 0.25;
++function pollGamepad() {
++  const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
++  const gp = gamepads[0];
++  if (!gp) return { lx: 0, ly: 0, cross: false, circle: false, square: false, triangle: false, l2: false, r2: false, start: false, dUp: false, dDown: false, dLeft: false, dRight: false };
++  const ax = v => Math.abs(v) > GP_DEADZONE ? v : 0;
++  return {
++    lx: ax(gp.axes[0]),
++    ly: ax(gp.axes[1]),
++    cross:    gp.buttons[0]?.pressed,
++    circle:   gp.buttons[1]?.pressed,
++    square:   gp.buttons[2]?.pressed,
++    triangle: gp.buttons[3]?.pressed,
++    l2:       gp.buttons[6]?.pressed,
++    r2:       gp.buttons[7]?.pressed,
++    start:    gp.buttons[9]?.pressed,
++    dUp:      gp.buttons[12]?.pressed,
++    dDown:    gp.buttons[13]?.pressed,
++    dLeft:    gp.buttons[14]?.pressed,
++    dRight:   gp.buttons[15]?.pressed,
++  };
++}
++
+ // ═══════════════════════════════════════════════
+ // RACE STATE & CHECKPOINTS
+ // ═══════════════════════════════════════════════
+@@ -1490,6 +1515,10 @@ function animate(){
+       if(keys['ArrowLeft'] || keys['KeyA']) lane = -1;
+       if(keys['ArrowRight'] || keys['KeyD']) lane = 1;
+       if(Math.abs(pico.jx) > 0.05) lane = pico.jx > 0 ? 1 : -1;
++      // PS2 Gamepad steering during lightspeed
++      const gpLS = pollGamepad();
++      if (gpLS.lx < -GP_DEADZONE || gpLS.dLeft) lane = -1;
++      if (gpLS.lx > GP_DEADZONE || gpLS.dRight) lane = 1;
+     } else {
+       if(keys['ArrowUp'] || keys['KeyW']) fwd = 1;
+       if(keys['ArrowDown'] || keys['KeyS']) fwd = -1;
+@@ -1501,6 +1530,20 @@ function animate(){
+       if(Math.abs(pico.jy) > 0.05) fwd = pico.jy > 0 ? 1 : -1;
+       if(Math.abs(pico.jx) > 0.05) lane = pico.jx > 0 ? 1 : -1;
+       if(pico.a) drift = true;
++
++      // PS2 Gamepad
++      const gp = pollGamepad();
++      if (gp.ly < 0 || gp.cross || gp.r2) fwd = 1;
++      if (gp.ly > 0) fwd = -1;
++      if (gp.lx < -GP_DEADZONE || gp.dLeft) lane = -1;
++      if (gp.lx > GP_DEADZONE || gp.dRight) lane = 1;
++      if (gp.dUp) fwd = 1;
++      if (gp.dDown) fwd = -1;
++      if (gp.square || gp.l2) drift = true;
++      if (gp.triangle && !gpState.prevTriangle) cycleView();
++      gpState.prevTriangle = gp.triangle;
++      if (gp.start && !gpState.prevStart) location.href = 'index.html';
++      gpState.prevStart = gp.start;
+     }
+ 
+     // Speed control
+diff --git a/racing_game.html b/racing_game.html
+index fee127b..7baa38d 100644
+--- a/racing_game.html
++++ b/racing_game.html
+@@ -57,7 +57,8 @@ canvas#game{display:block;width:100vw;height:100vh;}
+   <kbd>↑</kbd> 加速 <kbd>↓</kbd> 煞車<br>
+   <kbd>←</kbd><kbd>→</kbd> 轉向 <kbd>V</kbd> 視角<br>
+   <kbd>R</kbd> 重置 <kbd>Space</kbd> 手煞車<br>
+-  🎮 搖桿: 前後=加速煞車 左右=轉向
++  🎮 搖桿: 前後=加速煞車 左右=轉向<br>
++  🎮 PS2: ✕加速 □煞車 ○手煞 △視角 Start=首頁
+ </div>
+ <div id="joyStatus">🔌 搖桿: 偵測中…</div>
+ 
+@@ -183,6 +184,33 @@ function connectWS(){
+ }
+ connectWS();
+ 
++// ═══════════════════════════════════════════════════════
++// PS2 GAMEPAD (via USB adapter, standard Gamepad API)
++// ═══════════════════════════════════════════════════════
++const gpState = { prevTriangle: false, prevStart: false };
++const GP_DEADZONE = 0.25;
++function pollGamepad() {
++  const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
++  const gp = gamepads[0];
++  if (!gp) return { lx: 0, ly: 0, cross: false, circle: false, square: false, triangle: false, l2: false, r2: false, start: false, dUp: false, dDown: false, dLeft: false, dRight: false };
++  const ax = v => Math.abs(v) > GP_DEADZONE ? v : 0;
++  return {
++    lx: ax(gp.axes[0]),
++    ly: ax(gp.axes[1]),
++    cross:    gp.buttons[0]?.pressed,
++    circle:   gp.buttons[1]?.pressed,
++    square:   gp.buttons[2]?.pressed,
++    triangle: gp.buttons[3]?.pressed,
++    l2:       gp.buttons[6]?.pressed,
++    r2:       gp.buttons[7]?.pressed,
++    start:    gp.buttons[9]?.pressed,
++    dUp:      gp.buttons[12]?.pressed,
++    dDown:    gp.buttons[13]?.pressed,
++    dLeft:    gp.buttons[14]?.pressed,
++    dRight:   gp.buttons[15]?.pressed,
++  };
++}
++
+ // ═══════════════════════════════════════════════════════
+ // VIEWS
+ // ═══════════════════════════════════════════════════════
+@@ -259,11 +287,25 @@ function updateCar(dt){
+   const pJx = Math.abs(joy.jx) > 0.05 ? joy.jx : 0;
+   const pJy = Math.abs(joy.jy) > 0.05 ? joy.jy : 0;
+   const picoActive = joy.connected && (pJx !== 0 || pJy !== 0 || joy.a);
+-  const accel = (keys['ArrowUp'] || keys['KeyW'] || (picoActive && pJy > 0)) ? 1 : 0;
+-  const brake = (keys['ArrowDown'] || keys['KeyS'] || (picoActive && pJy < 0)) ? 1 : 0;
+-  const left  = (keys['ArrowLeft'] || keys['KeyA'] || (picoActive && pJx < 0)) ? 1 : 0;
+-  const right = (keys['ArrowRight'] || keys['KeyD'] || (picoActive && pJx > 0)) ? 1 : 0;
+-  const handbrake = keys['Space'] || (picoActive && joy.a) ? 1 : 0;
++
++  // PS2 Gamepad
++  const gp = pollGamepad();
++  const gpActive = gp.lx || gp.ly || gp.cross || gp.circle || gp.square || gp.triangle || gp.l2 || gp.r2 || gp.dUp || gp.dDown || gp.dLeft || gp.dRight;
++
++  const accel = (keys['ArrowUp'] || keys['KeyW'] || (picoActive && pJy > 0) || gp.cross || gp.r2 || gp.dUp || gp.ly < 0) ? 1 : 0;
++  const brake = (keys['ArrowDown'] || keys['KeyS'] || (picoActive && pJy < 0) || gp.square || gp.l2 || gp.dDown || gp.ly > 0) ? 1 : 0;
++  const left  = (keys['ArrowLeft'] || keys['KeyA'] || (picoActive && pJx < 0) || gp.dLeft || gp.lx < 0) ? 1 : 0;
++  const right = (keys['ArrowRight'] || keys['KeyD'] || (picoActive && pJx > 0) || gp.dRight || gp.lx > 0) ? 1 : 0;
++  const handbrake = keys['Space'] || (picoActive && joy.a) || gp.circle ? 1 : 0;
++
++  // PS2 triangle = cycle view
++  if (gp.triangle && !gpState.prevTriangle) cycleView();
++  gpState.prevTriangle = gp.triangle;
++
++  // PS2 start = go home
++  if (gp.start && !gpState.prevStart) location.href = 'index.html';
++  gpState.prevStart = gp.start;
++
+   {
+     const maxSpeed = 450;
+     const accelForce = 380;
+diff --git a/diff_game.html b/diff_game.html
+index b7ec07f..0dc14cf 100644
+--- a/diff_game.html
++++ b/diff_game.html
+@@ -66,12 +66,13 @@ canvas#game{display:block;margin:0 auto;}
+ </div>
+ 
+ <div id="controls">
+-  <span style="color:#FFD700">●</span> 前進 <kbd>W</kbd>
+-  <span style="color:#E03030">●</span> 後退 <kbd>S</kbd>
+-  <span style="color:#4488FF">●</span> 左轉 <kbd>A</kbd>
+-  <span style="color:#00CC44">●</span> 右轉 <kbd>D</kbd>
+-  <span style="color:#FFF">●</span> 原地旋轉 <kbd>Q</kbd>
+-  <span style="color:#666">●</span> 停車 <kbd>Space</kbd>
++  <span style="color:#FFD700">●</span> 前進 <kbd>W</kbd> / <kbd>✕</kbd><kbd>R2</kbd><kbd>D-Up</kbd>
++  <span style="color:#E03030">●</span> 後退 <kbd>S</kbd> / <kbd>□</kbd><kbd>L2</kbd><kbd>D-Down</kbd>
++  <span style="color:#4488FF">●</span> 左轉 <kbd>A</kbd> / <kbd>D-Left</kbd>
++  <span style="color:#00CC44">●</span> 右轉 <kbd>D</kbd> / <kbd>D-Right</kbd>
++  <span style="color:#FFF">●</span> 旋轉 <kbd>Q</kbd> / <kbd>○</kbd>
++  <span style="color:#666">●</span> 坦克操控: 左搖桿=左輪 右搖桿=右輪
++  <span style="color:#888">●</span> <kbd>Start</kbd>=首頁
+ </div>
+ 
+ <div id="motorViz">
+@@ -169,6 +170,33 @@ const keys = {};
+ addEventListener('keydown', e => { keys[e.code] = true; e.preventDefault(); });
+ addEventListener('keyup',   e => { keys[e.code] = false; });
+ 
++// ── PS2 GAMEPAD (via USB adapter, standard Gamepad API) ──
++const gpState = { prevTriangle: false, prevStart: false };
++const GP_DEADZONE = 0.25;
++function pollGamepad() {
++  const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
++  const gp = gamepads[0];
++  if (!gp) return { lx: 0, ly: 0, rx: 0, ry: 0, cross: false, circle: false, square: false, triangle: false, l2: false, r2: false, start: false, dUp: false, dDown: false, dLeft: false, dRight: false };
++  const ax = v => Math.abs(v) > GP_DEADZONE ? v : 0;
++  return {
++    lx: ax(gp.axes[0]),
++    ly: ax(gp.axes[1]),
++    rx: ax(gp.axes[2]),
++    ry: ax(gp.axes[3]),
++    cross:    gp.buttons[0]?.pressed,
++    circle:   gp.buttons[1]?.pressed,
++    square:   gp.buttons[2]?.pressed,
++    triangle: gp.buttons[3]?.pressed,
++    l2:       gp.buttons[6]?.pressed,
++    r2:       gp.buttons[7]?.pressed,
++    start:    gp.buttons[9]?.pressed,
++    dUp:      gp.buttons[12]?.pressed,
++    dDown:    gp.buttons[13]?.pressed,
++    dLeft:    gp.buttons[14]?.pressed,
++    dRight:   gp.buttons[15]?.pressed,
++  };
++}
++
+ // Pico W WebSocket
+ const pico = { connected: false, left: 0, right: 0, action: 'stop' };
+ function connectPico(){
+@@ -302,6 +330,55 @@ function getInput(){
+     leftPower = -1; rightPower = 1; action = 'spin';
+   }
+ 
++  // PS2 Gamepad 覆蓋
++  const gp = pollGamepad();
++  const gpActive = gp.ly !== 0 || gp.ry !== 0 || gp.cross || gp.r2 ||
++                   gp.square || gp.l2 || gp.circle ||
++                   gp.dUp || gp.dDown || gp.dLeft || gp.dRight;
++  if(gpActive){
++    let gpLeft = -gp.ly;
++    let gpRight = -gp.ry;
++
++    if(gp.cross || gp.r2 || gp.dUp){
++      gpLeft = 1; gpRight = 1; action = 'fwd';
++    } else if(gp.square || gp.l2 || gp.dDown){
++      gpLeft = -1; gpRight = -1; action = 'back';
++    } else if(gp.dLeft){
++      gpLeft = 0; gpRight = 1; action = 'left';
++    } else if(gp.dRight){
++      gpLeft = 1; gpRight = 0; action = 'right';
++    } else if(gp.circle){
++      gpLeft = -1; gpRight = 1; action = 'spin';
++    } else {
++      const avg = (gpLeft + gpRight) / 2;
++      const diff = gpLeft - gpRight;
++      if(Math.abs(avg) < 0.1 && Math.abs(diff) > 0.3){
++        action = diff > 0 ? 'right' : 'left';
++      } else if(avg > 0.1){
++        action = 'fwd';
++      } else if(avg < -0.1){
++        action = 'back';
++      }
++    }
++
++    leftPower = Math.max(-1, Math.min(1, gpLeft));
++    rightPower = Math.max(-1, Math.min(1, gpRight));
++  }
++
++  if(gp.triangle && !gpState.prevTriangle){ /* view toggle placeholder */ }
++  gpState.prevTriangle = gp.triangle;
++
++  if(gp.start && !gpState.prevStart){
++    window.location.href = 'index.html';
++  }
++  gpState.prevStart = gp.start;
++
+   // Pico W 覆蓋（有連線時）
+   if(pico.connected && pico.action !== 'stop' && pico.action !== 'ok'){
+     leftPower = pico.left;
+@@ -584,6 +661,19 @@ addEventListener('keydown', e => {
+   }
+ });
+ 
++// PS2 手把也能開始（✕ 或 Start）
++let gpStartPoll = setInterval(() => {
++  if(gameStarted){ clearInterval(gpStartPoll); return; }
++  const gps = navigator.getGamepads ? navigator.getGamepads() : [];
++  const g = gps[0];
++  if(!g) return;
++  if(g.buttons[0]?.pressed || g.buttons[9]?.pressed){
++    document.getElementById('tutorial').style.display = 'none';
++    gameStarted = true;
++    clearInterval(gpStartPoll);
++  }
++}, 100);
++
+ requestAnimationFrame(gameLoop);
+ </script>
+ </body>
